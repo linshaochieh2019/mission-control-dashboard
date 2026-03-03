@@ -50,3 +50,10 @@ export interface TeamMember {
   deviceInfo: string
   parentId?: string
 }
+
+export interface CalendarEvent {
+  id: string
+  date: string
+  label: string
+  variant?: 'default' | 'highlight'
+}

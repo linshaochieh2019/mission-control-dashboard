@@ -1,4 +1,4 @@
-import { Activity, Document, MemoryEntry, Project, Task, TeamMember } from './types'
+import { Activity, CalendarEvent, Document, MemoryEntry, Project, Task, TeamMember } from './types'
 
 export const mockTasks: Task[] = [
   { id: '1', title: 'Implement Auth Flow', description: 'Setup JWT and OAuth for user authentication.', assignee: 'H', status: 'In Progress' },
@@ -41,4 +41,13 @@ export const mockTeam: TeamMember[] = [
   { id: '2', name: 'Inky', role: 'Developer', model: 'Standard', currentTask: 'Implementing UI + interactions', status: 'active', deviceInfo: 'Worker-A', parentId: '1' },
   { id: '3', name: 'Coral', role: 'Designer', model: 'Standard', currentTask: 'Refining visual language', status: 'idle', deviceInfo: 'Worker-B', parentId: '1' },
   { id: '4', name: 'Bloop', role: 'QA Engineer', model: 'Standard', currentTask: 'Running lint/type/build checks', status: 'active', deviceInfo: 'Worker-C', parentId: '1' },
+]
+
+export const mockCalendarEvents: CalendarEvent[] = [
+  { id: '1', date: '2026-03-01', label: 'Daily Standup' },
+  { id: '2', date: '2026-03-02', label: 'Daily Standup' },
+  { id: '3', date: '2026-03-03', label: 'Daily Standup' },
+  { id: '4', date: '2026-03-04', label: 'Daily Standup' },
+  { id: '5', date: '2026-03-05', label: 'Daily Standup' },
+  { id: '6', date: '2026-03-12', label: 'Sprint Check', variant: 'highlight' },
 ]
