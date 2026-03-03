@@ -1,0 +1,5 @@
+{
+  "name": "Mission Control Dashboard",
+  "description": "A clean, minimal mission control dashboard inspired by Linear's design language, featuring task boards, calendars, project tracking, and team management.",
+  "requestFramePermissions": []
+}
