@@ -1,5 +1,16 @@
 import { mockActivities, mockCalendarEvents, mockDocs, mockMemories, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
-import { Activity, CalendarEvent, Document, MemoryEntry, Project, Task, TeamMember } from '@/src/types'
+import { ApiDashboardAdapter } from '@/src/services/apiDashboardAdapter'
+import {
+  DashboardApiAdapter,
+  toActivity,
+  toCalendarEvent,
+  toDocument,
+  toMemoryEntry,
+  toProject,
+  toTask,
+  toTeamMember,
+} from '@/src/services/dashboardContracts'
+import { Activity, CalendarEvent, Document, MemoryEntry, Project, Task, TaskStatus, TeamMember } from '@/src/types'
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
@@ -17,14 +28,14 @@ const resolveWithLatency = async <T>(value: T, delayMs = 120): Promise<T> => {
   return structuredClone(value)
 }
 
-class MockDashboardDataService implements DashboardDataService {
+export class MockDashboardDataService implements DashboardDataService {
   private tasks = structuredClone(mockTasks)
 
   getTasks() {
     return resolveWithLatency(this.tasks)
   }
 
-  async updateTaskStatus(taskId: Task['id'], status: Task['status']) {
+  async updateTaskStatus(taskId: Task['id'], status: TaskStatus) {
     const taskIndex = this.tasks.findIndex((task) => task.id === taskId)
 
     if (taskIndex === -1) {
@@ -60,5 +71,49 @@ class MockDashboardDataService implements DashboardDataService {
   }
 }
 
-// Backend-ready seam: swap this with an API-backed implementation when endpoints are ready.
-export const dashboardDataService: DashboardDataService = new MockDashboardDataService()
+export class ApiDashboardDataService implements DashboardDataService {
+  constructor(private readonly adapter: DashboardApiAdapter) {}
+
+  async getTasks() {
+    return (await this.adapter.getTasks()).map(toTask)
+  }
+
+  async updateTaskStatus(taskId: Task['id'], status: TaskStatus) {
+    return toTask(await this.adapter.updateTaskStatus(taskId, { status }))
+  }
+
+  async getActivities() {
+    return (await this.adapter.getActivities()).map(toActivity)
+  }
+
+  async getProjects() {
+    return (await this.adapter.getProjects()).map(toProject)
+  }
+
+  async getMemories() {
+    return (await this.adapter.getMemories()).map(toMemoryEntry)
+  }
+
+  async getDocs() {
+    return (await this.adapter.getDocs()).map(toDocument)
+  }
+
+  async getTeam() {
+    return (await this.adapter.getTeam()).map(toTeamMember)
+  }
+
+  async getCalendarEvents() {
+    return (await this.adapter.getCalendarEvents()).map(toCalendarEvent)
+  }
+}
+
+export const createDashboardDataService = (baseUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_BASE_URL): DashboardDataService => {
+  if (baseUrl) {
+    return new ApiDashboardDataService(new ApiDashboardAdapter(baseUrl))
+  }
+
+  return new MockDashboardDataService()
+}
+
+// Default to mock data unless an API base URL is explicitly configured.
+export const dashboardDataService: DashboardDataService = createDashboardDataService()
