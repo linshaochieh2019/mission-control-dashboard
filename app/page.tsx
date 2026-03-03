@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertCircle, Brain, Calendar, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
+import { AlertCircle, Brain, Calendar, ChevronLeft, ChevronRight, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
 import { mockActivities, mockDocs, mockMemories, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
 import { AppView, Task } from '@/src/types'
 
@@ -15,6 +15,22 @@ const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Team', icon: Users },
 ]
 
+const staticCalendarEvents: Record<string, string[]> = {
+  '2026-03-01': ['Daily Standup'],
+  '2026-03-02': ['Daily Standup'],
+  '2026-03-03': ['Daily Standup'],
+  '2026-03-04': ['Daily Standup'],
+  '2026-03-05': ['Daily Standup'],
+  '2026-03-12': ['Sprint Check'],
+}
+
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Task Board')
   const [tasks, setTasks] = useState<Task[]>(mockTasks)
@@ -22,6 +38,7 @@ export default function Home() {
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
   const [date, setDate] = useState(mockMemories[0]?.date)
   const [docId, setDocId] = useState(mockDocs[0]?.id)
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date(2026, 2, 1))
 
   const selectedDoc = mockDocs.find((d) => d.id === docId)
   const dates = [...new Set(mockMemories.map((m) => m.date))]
@@ -32,7 +49,36 @@ export default function Home() {
     setTasks((prev) => prev.map((task) => (task.id === dragTaskId ? { ...task, status } : task)))
   }
 
-  const monthDays = useMemo(() => Array.from({ length: 31 }, (_, i) => i + 1), [])
+  const calendarLabel = useMemo(
+    () => calendarMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+    [calendarMonth],
+  )
+
+  const calendarCells = useMemo(() => {
+    const year = calendarMonth.getFullYear()
+    const month = calendarMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const firstWeekDay = (firstDay.getDay() + 6) % 7
+
+    const leading = Array.from({ length: firstWeekDay }, (_, idx) => ({ key: `lead-${idx}`, empty: true }))
+    const days = Array.from({ length: daysInMonth }, (_, idx) => {
+      const day = idx + 1
+      const dayDate = new Date(year, month, day)
+      return {
+        key: formatDateKey(dayDate),
+        empty: false,
+        day,
+        events: staticCalendarEvents[formatDateKey(dayDate)] ?? [],
+      }
+    })
+
+    return [...leading, ...days]
+  }, [calendarMonth])
+
+  const goPrevMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+  const goNextMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  const goToday = () => setCalendarMonth(new Date())
 
   return (
     <div className="app">
@@ -87,14 +133,32 @@ export default function Home() {
 
               {activeView === 'Calendar' && (
                 <div className="calendar">
-                  <div className="row"><h3 style={{ margin: 0 }}>March 2026</h3><span className="badge">Today / Prev / Next</span></div>
+                  <div className="row">
+                    <h3 style={{ margin: 0 }}>{calendarLabel}</h3>
+                    <div className="row" style={{ gap: 8 }}>
+                      <button className="nav-btn" onClick={goToday} title="Today">Today</button>
+                      <button className="nav-btn" onClick={goPrevMonth} title="Previous month"><ChevronLeft size={16} /></button>
+                      <button className="nav-btn" onClick={goNextMonth} title="Next month"><ChevronRight size={16} /></button>
+                    </div>
+                  </div>
                   <div className="month-grid panel">
                     {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="cell muted">{d}</div>)}
-                    {monthDays.map((d) => (
-                      <div key={d} className="cell">
-                        <div className="muted">{d}</div>
-                        {d <= 5 && <span className="pill" style={{ background: '#1b3054', color: '#8cb4ff' }}>Daily Standup</span>}
-                        {d === 12 && <span className="pill" style={{ background: '#4b3414', color: '#fbbf24' }}>Sprint Check</span>}
+                    {calendarCells.map((cell) => (
+                      <div key={cell.key} className="cell" style={cell.empty ? { background: '#101010' } : undefined}>
+                        {!cell.empty && (
+                          <>
+                            <div className="muted">{cell.day}</div>
+                            {cell.events.map((event) => (
+                              <span
+                                key={event}
+                                className="pill"
+                                style={event === 'Sprint Check' ? { background: '#4b3414', color: '#fbbf24' } : { background: '#1b3054', color: '#8cb4ff' }}
+                              >
+                                {event}
+                              </span>
+                            ))}
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
