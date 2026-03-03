@@ -1,4 +1,4 @@
-import { Activity, CalendarEvent, Document, MemoryEntry, OpsSnapshot, Project, Task, TeamMember } from './types'
+import { Activity, CronJob, Document, MemoryEntry, OpsSnapshot, Project, Task, TeamMember } from './types'
 
 export const mockTasks: Task[] = [
   { id: '1', title: 'Implement Auth Flow', description: 'Setup JWT and OAuth for user authentication.', assignee: 'H', status: 'In Progress' },
@@ -43,13 +43,47 @@ export const mockTeam: TeamMember[] = [
   { id: '4', name: 'Bloop', role: 'QA Engineer', model: 'Standard', currentTask: 'Running lint/type/build checks', status: 'active', deviceInfo: 'Worker-C', parentId: '1' },
 ]
 
-export const mockCalendarEvents: CalendarEvent[] = [
-  { id: '1', date: '2026-03-01', label: 'Daily Standup' },
-  { id: '2', date: '2026-03-02', label: 'Daily Standup' },
-  { id: '3', date: '2026-03-03', label: 'Daily Standup' },
-  { id: '4', date: '2026-03-04', label: 'Daily Standup' },
-  { id: '5', date: '2026-03-05', label: 'Daily Standup' },
-  { id: '6', date: '2026-03-12', label: 'Sprint Check', variant: 'highlight' },
+export const mockCronJobs: CronJob[] = [
+  {
+    id: 'cron-system-standup',
+    name: 'Daily Standup Digest',
+    scheduleSummary: 'Every day at 08:00 (Asia/Taipei)',
+    enabled: true,
+    scopeTarget: 'agent:main:discord:standup-channel',
+    nextRunTime: '2026-03-04T00:00:00.000Z',
+    lastRunStatus: 'ok',
+    category: 'system',
+  },
+  {
+    id: 'cron-system-retro',
+    name: 'Weekly Retro Prompt',
+    scheduleSummary: 'Every Friday at 18:00 (Asia/Taipei)',
+    enabled: true,
+    scopeTarget: 'agent:main:discord:retro-channel',
+    nextRunTime: '2026-03-06T10:00:00.000Z',
+    lastRunStatus: 'ok',
+    category: 'system',
+  },
+  {
+    id: 'cron-temp-15min-tick',
+    name: '15-min Tactical Tick',
+    scheduleSummary: 'Every 15 minutes',
+    enabled: true,
+    scopeTarget: 'session:project/mission-control-dashboard',
+    nextRunTime: '2026-03-03T06:30:00.000Z',
+    lastRunStatus: 'running',
+    category: 'project-temp',
+  },
+  {
+    id: 'cron-temp-warmup',
+    name: 'Temporary PR Warmup Check',
+    scheduleSummary: 'Every 30 minutes',
+    enabled: false,
+    scopeTarget: 'session:project/poker-companion-app',
+    nextRunTime: '2026-03-03T07:00:00.000Z',
+    lastRunStatus: 'unknown',
+    category: 'project-temp',
+  },
 ]
 
 export const mockOpsSnapshot: OpsSnapshot = {

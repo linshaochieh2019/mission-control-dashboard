@@ -1,4 +1,4 @@
-import { mockActivities, mockCalendarEvents, mockDocs, mockMemories, mockOpsSnapshot, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
+import { mockActivities, mockCronJobs, mockDocs, mockMemories, mockOpsSnapshot, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
 import { ApiDashboardAdapter } from '@/src/services/apiDashboardAdapter'
 import { LocalDashboardAdapter } from '@/src/services/localDashboardAdapter'
 import {
@@ -8,7 +8,7 @@ import {
   DashboardApiAdapter,
   DashboardDataSource,
   toActivity,
-  toCalendarEvent,
+  toCronJob,
   toDocument,
   toMemoryEntry,
   toOpsSnapshot,
@@ -16,7 +16,7 @@ import {
   toTask,
   toTeamMember,
 } from '@/src/services/dashboardContracts'
-import { Activity, CalendarEvent, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember } from '@/src/types'
+import { Activity, CronJob, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember } from '@/src/types'
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
@@ -26,7 +26,7 @@ export interface DashboardDataService {
   getMemories(): Promise<MemoryEntry[]>
   getDocs(): Promise<Document[]>
   getTeam(): Promise<TeamMember[]>
-  getCalendarEvents(): Promise<CalendarEvent[]>
+  getCronJobs(): Promise<CronJob[]>
   getOpsSnapshot(): Promise<OpsSnapshot>
   getSource(): Promise<DashboardDataSource>
 }
@@ -123,8 +123,8 @@ export class MockDashboardDataService implements DashboardDataService {
     return resolveWithLatency(mockTeam)
   }
 
-  getCalendarEvents() {
-    return resolveWithLatency(mockCalendarEvents)
+  getCronJobs() {
+    return resolveWithLatency(mockCronJobs)
   }
 
   getOpsSnapshot() {
@@ -167,8 +167,8 @@ export class ApiDashboardDataService implements DashboardDataService {
     return (await this.adapter.getTeam()).map(toTeamMember)
   }
 
-  async getCalendarEvents() {
-    return (await this.adapter.getCalendarEvents()).map(toCalendarEvent)
+  async getCronJobs() {
+    return (await this.adapter.getCronJobs()).map(toCronJob)
   }
 
   async getOpsSnapshot() {

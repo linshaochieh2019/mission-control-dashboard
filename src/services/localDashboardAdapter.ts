@@ -1,6 +1,6 @@
 import {
   ApiActivity,
-  ApiCalendarEvent,
+  ApiCronJob,
   ApiDocument,
   ApiMemoryEntry,
   ApiOpsSnapshot,
@@ -20,7 +20,7 @@ interface LocalDashboardResponse {
   memories: ApiMemoryEntry[]
   docs: ApiDocument[]
   team: ApiTeamMember[]
-  calendarEvents: ApiCalendarEvent[]
+  cronJobs: ApiCronJob[]
   operations: ApiOpsSnapshot
 }
 
@@ -74,8 +74,8 @@ export class LocalDashboardAdapter implements DashboardApiAdapter {
     return (await this.getPayload()).team
   }
 
-  async getCalendarEvents() {
-    return (await this.getPayload()).calendarEvents
+  async getCronJobs() {
+    return (await this.getPayload()).cronJobs
   }
 
   async getOpsSnapshot() {

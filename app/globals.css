@@ -50,10 +50,9 @@ body {
 .tone-blocked { background: #361d1d; color: #ff9f9f; }
 .tone-idle { background: #232323; color: #a3a3a3; }
 
-.calendar { height: 100%; display: grid; grid-template-rows: auto 1fr; gap: 12px; }
-.month-grid { display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
-.cell { min-height: 92px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 8px; }
-.pill { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 6px; font-size: 10px; }
+.cron-jobs-view { height: 100%; display: grid; grid-template-rows: auto 1fr; gap: 12px; }
+.cron-jobs-table-wrap { min-height: 0; padding: 12px; overflow: auto; }
+.badge-temp { color: #fbbf24; border-color: #4b3414; background: #2a1d0f; }
 
 .projects { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .project-card { padding: 14px; }

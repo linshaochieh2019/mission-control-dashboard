@@ -1,6 +1,6 @@
 import {
   ApiActivity,
-  ApiCalendarEvent,
+  ApiCronJob,
   ApiDocument,
   ApiMemoryEntry,
   ApiProject,
@@ -63,8 +63,8 @@ export class ApiDashboardAdapter implements DashboardApiAdapter {
     return this.request<ApiTeamMember[]>('/team')
   }
 
-  getCalendarEvents() {
-    return this.request<ApiCalendarEvent[]>('/calendar-events')
+  getCronJobs() {
+    return this.request<ApiCronJob[]>('/cron-jobs')
   }
 
   async getSource(): Promise<DashboardDataSource> {

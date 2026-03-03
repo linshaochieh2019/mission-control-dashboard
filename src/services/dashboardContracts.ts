@@ -1,7 +1,8 @@
 import {
   Activity,
-  CalendarEvent,
-  CalendarEventVariant,
+  CronJob,
+  CronJobCategory,
+  CronJobLastRunStatus,
   Document,
   DocumentCategory,
   DocumentFormat,
@@ -70,11 +71,15 @@ export interface ApiTeamMember {
   parentId?: string
 }
 
-export interface ApiCalendarEvent {
+export interface ApiCronJob {
   id: string
-  date: string
-  label: string
-  variant?: CalendarEventVariant
+  name: string
+  scheduleSummary: string
+  enabled: boolean
+  scopeTarget: string
+  nextRunTime: string | null
+  lastRunStatus: CronJobLastRunStatus
+  category: CronJobCategory
 }
 
 export interface ApiOpsSnapshot {
@@ -91,7 +96,7 @@ export interface DashboardApiContract {
   memories: ApiMemoryEntry[]
   docs: ApiDocument[]
   team: ApiTeamMember[]
-  calendarEvents: ApiCalendarEvent[]
+  cronJobs: ApiCronJob[]
   operations?: ApiOpsSnapshot
 }
 
@@ -109,7 +114,7 @@ export interface DashboardApiAdapter {
   getMemories(): Promise<ApiMemoryEntry[]>
   getDocs(): Promise<ApiDocument[]>
   getTeam(): Promise<ApiTeamMember[]>
-  getCalendarEvents(): Promise<ApiCalendarEvent[]>
+  getCronJobs(): Promise<ApiCronJob[]>
   getOpsSnapshot?(): Promise<ApiOpsSnapshot>
   getSource?(): Promise<DashboardDataSource>
 }
@@ -120,5 +125,5 @@ export const toProject = (project: ApiProject): Project => ({ ...project })
 export const toMemoryEntry = (memory: ApiMemoryEntry): MemoryEntry => ({ ...memory })
 export const toDocument = (doc: ApiDocument): Document => ({ ...doc })
 export const toTeamMember = (member: ApiTeamMember): TeamMember => ({ ...member })
-export const toCalendarEvent = (event: ApiCalendarEvent): CalendarEvent => ({ ...event })
+export const toCronJob = (job: ApiCronJob): CronJob => ({ ...job })
 export const toOpsSnapshot = (snapshot: ApiOpsSnapshot): OpsSnapshot => ({ ...snapshot })

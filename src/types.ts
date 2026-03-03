@@ -1,4 +1,4 @@
-export type AppView = 'Live Agent Operations' | 'Calendar' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Memory' | 'Docs' | 'Team'
 
 export type TaskStatus = 'Backlog' | 'In Progress' | 'Review' | 'Done'
 
@@ -60,13 +60,18 @@ export interface TeamMember {
   parentId?: string
 }
 
-export type CalendarEventVariant = 'default' | 'highlight'
+export type CronJobCategory = 'system' | 'project-temp'
+export type CronJobLastRunStatus = 'ok' | 'error' | 'running' | 'unknown'
 
-export interface CalendarEvent {
+export interface CronJob {
   id: string
-  date: string
-  label: string
-  variant?: CalendarEventVariant
+  name: string
+  scheduleSummary: string
+  enabled: boolean
+  scopeTarget: string
+  nextRunTime: string | null
+  lastRunStatus: CronJobLastRunStatus
+  category: CronJobCategory
 }
 
 export type OpsRunState = 'Running' | 'Waiting QA' | 'Blocked' | 'Idle'

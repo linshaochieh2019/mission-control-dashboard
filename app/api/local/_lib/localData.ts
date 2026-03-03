@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { mockCalendarEvents, mockTasks } from '@/src/mockData'
+import { mockCronJobs, mockTasks } from '@/src/mockData'
 import {
   ApiActivity,
-  ApiCalendarEvent,
+  ApiCronJob,
   ApiDocument,
   ApiMemoryEntry,
   ApiOpsSnapshot,
@@ -42,7 +42,7 @@ export interface LocalDashboardPayload {
   memories: ApiMemoryEntry[]
   docs: ApiDocument[]
   team: ApiTeamMember[]
-  calendarEvents: ApiCalendarEvent[]
+  cronJobs: ApiCronJob[]
   operations: ApiOpsSnapshot
   sessions: LocalSessionOverview[]
   subagents: LocalSubagentStatus[]
@@ -112,7 +112,7 @@ const withFallback = (warnings: string[]): LocalDashboardPayload => {
     memories: [],
     docs: [],
     team: [],
-    calendarEvents: structuredClone(mockCalendarEvents),
+    cronJobs: structuredClone(mockCronJobs),
     operations: buildOpsSnapshot(tasks, activities, sessions),
     sessions,
     subagents: [],
@@ -133,6 +133,65 @@ const safeReadJson = async <T>(filePath: string): Promise<T | null> => {
 }
 
 const toTimestamp = (value: number | undefined) => (value ? new Date(value).toISOString() : '')
+
+type RawCronJob = {
+  id?: string
+  name?: string
+  enabled?: boolean
+  sessionKey?: string
+  sessionTarget?: string
+  schedule?: { kind?: string; expr?: string; tz?: string; atMs?: number; everyMs?: number }
+  state?: { nextRunAtMs?: number; lastRunStatus?: string; lastStatus?: string }
+  payload?: { message?: string }
+}
+
+const scheduleSummary = (job: RawCronJob) => {
+  const schedule = job.schedule ?? {}
+  if (schedule.kind === 'cron' && schedule.expr) {
+    return `${schedule.expr}${schedule.tz ? ` (${schedule.tz})` : ''}`
+  }
+  if (schedule.kind === 'at' && schedule.atMs) {
+    return `One-shot at ${new Date(schedule.atMs).toLocaleString('en-US')}`
+  }
+  if (schedule.everyMs) {
+    const minutes = Math.round(schedule.everyMs / 60000)
+    return `Every ${minutes} minute${minutes === 1 ? '' : 's'}`
+  }
+  return schedule.kind ?? 'Unknown schedule'
+}
+
+const categorizeCronJob = (job: RawCronJob): ApiCronJob['category'] => {
+  const name = `${job.name ?? ''} ${job.payload?.message ?? ''}`.toLowerCase()
+  const expr = (job.schedule?.expr ?? '').toLowerCase()
+  const isFastTick = /\*\/([0-2]?\d)/.test(expr)
+  const looksTemporary = /temp|temporary|tactical|tick|warmup|experiment|trial/.test(name)
+  const isolatedSession = job.sessionTarget === 'isolated'
+  if (looksTemporary || isFastTick || (isolatedSession && /15|30/.test(expr))) return 'project-temp'
+  return 'system'
+}
+
+const normalizeLastRunStatus = (job: RawCronJob): ApiCronJob['lastRunStatus'] => {
+  const status = (job.state?.lastRunStatus ?? job.state?.lastStatus ?? 'unknown').toLowerCase()
+  if (status === 'ok' || status === 'error' || status === 'running') return status
+  return 'unknown'
+}
+
+const readCronJobs = async (openclawHome: string): Promise<ApiCronJob[]> => {
+  const jobsPath = path.join(openclawHome, 'cron', 'jobs.json')
+  const payload = await safeReadJson<{ jobs?: RawCronJob[] }>(jobsPath)
+  const jobs = payload?.jobs ?? []
+
+  return jobs.map((job) => ({
+    id: String(job.id ?? crypto.randomUUID()),
+    name: String(job.name ?? 'Unnamed cron job'),
+    scheduleSummary: scheduleSummary(job),
+    enabled: Boolean(job.enabled),
+    scopeTarget: String(job.sessionKey ?? job.sessionTarget ?? 'unknown'),
+    nextRunTime: job.state?.nextRunAtMs ? new Date(job.state.nextRunAtMs).toISOString() : null,
+    lastRunStatus: normalizeLastRunStatus(job),
+    category: categorizeCronJob(job),
+  }))
+}
 
 const readSessionData = async (openclawHome: string) => {
   const runsPath = path.join(openclawHome, 'subagents', 'runs.json')
@@ -294,13 +353,14 @@ const buildLiveTasks = (sessions: LocalSessionOverview[], subagents: LocalSubage
   return [...fromSubagents, ...reviewTask, ...docsTask].slice(0, 10)
 }
 
-const buildLiveCalendarEvents = (sessions: LocalSessionOverview[]): ApiCalendarEvent[] =>
-  sessions.slice(0, 8).map((session, index) => ({
-    id: `event-session-${session.id}`,
-    date: (session.startedAt || new Date().toISOString()).slice(0, 10),
-    label: session.label.length > 28 ? `${session.label.slice(0, 28)}…` : session.label,
-    variant: index === 0 ? 'highlight' : 'default',
-  }))
+export const buildLocalCronJobsPayload = async () => {
+  const openclawHome = resolveOpenClawHome()
+  const jobs = await readCronJobs(openclawHome)
+  return {
+    source: jobs.length > 0 ? ('local' as const) : ('mock' as const),
+    cronJobs: jobs.length > 0 ? jobs : structuredClone(mockCronJobs),
+  }
+}
 
 export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayload> => {
   const workspaceRoot = resolveWorkspaceRoot()
@@ -308,9 +368,10 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
   const warnings: string[] = []
 
   try {
-    const [{ sessions, subagents, activities }, { memories, docs, projects }] = await Promise.all([
+    const [{ sessions, subagents, activities }, { memories, docs, projects }, cronJobs] = await Promise.all([
       readSessionData(openclawHome),
       readWorkspaceData(workspaceRoot),
+      readCronJobs(openclawHome),
     ])
 
     const team: ApiTeamMember[] = subagents.slice(0, 6).map((item, index) => ({
@@ -324,9 +385,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
     }))
 
     const tasks = buildLiveTasks(sessions, subagents, docs)
-    const calendarEvents = buildLiveCalendarEvents(sessions)
     const effectiveTasks = tasks.length > 0 ? tasks : structuredClone(mockTasks)
-    const effectiveCalendarEvents = calendarEvents.length > 0 ? calendarEvents : structuredClone(mockCalendarEvents)
 
     return {
       source: 'local',
@@ -336,7 +395,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       memories,
       docs,
       team,
-      calendarEvents: effectiveCalendarEvents,
+      cronJobs: cronJobs.length > 0 ? cronJobs : structuredClone(mockCronJobs),
       operations: buildOpsSnapshot(effectiveTasks, activities, sessions),
       sessions,
       subagents,
