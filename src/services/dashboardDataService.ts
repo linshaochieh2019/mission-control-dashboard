@@ -1,7 +1,9 @@
 import { mockActivities, mockCalendarEvents, mockDocs, mockMemories, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
 import { ApiDashboardAdapter } from '@/src/services/apiDashboardAdapter'
+import { LocalDashboardAdapter } from '@/src/services/localDashboardAdapter'
 import {
   DashboardApiAdapter,
+  DashboardDataSource,
   toActivity,
   toCalendarEvent,
   toDocument,
@@ -21,6 +23,7 @@ export interface DashboardDataService {
   getDocs(): Promise<Document[]>
   getTeam(): Promise<TeamMember[]>
   getCalendarEvents(): Promise<CalendarEvent[]>
+  getSource(): Promise<DashboardDataSource>
 }
 
 const resolveWithLatency = async <T>(value: T, delayMs = 120): Promise<T> => {
@@ -69,6 +72,10 @@ export class MockDashboardDataService implements DashboardDataService {
   getCalendarEvents() {
     return resolveWithLatency(mockCalendarEvents)
   }
+
+  getSource() {
+    return resolveWithLatency<DashboardDataSource>('mock', 0)
+  }
 }
 
 export class ApiDashboardDataService implements DashboardDataService {
@@ -105,9 +112,20 @@ export class ApiDashboardDataService implements DashboardDataService {
   async getCalendarEvents() {
     return (await this.adapter.getCalendarEvents()).map(toCalendarEvent)
   }
+
+  async getSource() {
+    return (await this.adapter.getSource?.()) ?? 'mock'
+  }
 }
 
-export const createDashboardDataService = (baseUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_BASE_URL): DashboardDataService => {
+export const createDashboardDataService = (
+  baseUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_BASE_URL,
+  mode = process.env.NEXT_PUBLIC_DASHBOARD_DATA_MODE,
+): DashboardDataService => {
+  if (mode === 'local') {
+    return new ApiDashboardDataService(new LocalDashboardAdapter())
+  }
+
   if (baseUrl) {
     return new ApiDashboardDataService(new ApiDashboardAdapter(baseUrl))
   }
@@ -115,5 +133,5 @@ export const createDashboardDataService = (baseUrl = process.env.NEXT_PUBLIC_DAS
   return new MockDashboardDataService()
 }
 
-// Default to mock data unless an API base URL is explicitly configured.
+// Default to mock data unless local mode or an API base URL is explicitly configured.
 export const dashboardDataService: DashboardDataService = createDashboardDataService()

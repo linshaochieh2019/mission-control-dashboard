@@ -86,6 +86,8 @@ export interface UpdateTaskStatusRequest {
   status: TaskStatus
 }
 
+export type DashboardDataSource = 'local' | 'mock' | 'error'
+
 export interface DashboardApiAdapter {
   getTasks(): Promise<ApiTask[]>
   updateTaskStatus(taskId: ApiTask['id'], payload: UpdateTaskStatusRequest): Promise<ApiTask>
@@ -95,6 +97,7 @@ export interface DashboardApiAdapter {
   getDocs(): Promise<ApiDocument[]>
   getTeam(): Promise<ApiTeamMember[]>
   getCalendarEvents(): Promise<ApiCalendarEvent[]>
+  getSource?(): Promise<DashboardDataSource>
 }
 
 export const toTask = (task: ApiTask): Task => ({ ...task })

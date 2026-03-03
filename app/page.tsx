@@ -6,6 +6,7 @@ import { AlertCircle, Brain, Calendar, ChevronLeft, ChevronRight, FileText, Fold
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
 import { AppView, Task } from '@/src/types'
+import { DashboardDataSource } from '@/src/services/dashboardContracts'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
 import { buildCalendarCells, shiftMonth, toEventMap } from '@/src/utils/calendar'
 
@@ -27,6 +28,7 @@ export default function Home() {
   const [date, setDate] = useState<string>()
   const [docId, setDocId] = useState<string>()
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(2026, 2, 1))
+  const [dataSource, setDataSource] = useState<DashboardDataSource>('mock')
 
   const tasksResource = useAsyncResource(useCallback(() => dashboardDataService.getTasks(), []))
   const activitiesResource = useAsyncResource(useCallback(() => dashboardDataService.getActivities(), []))
@@ -53,6 +55,13 @@ export default function Home() {
       setDocId(docsResource.data[0].id)
     }
   }, [docId, docsResource.data])
+
+  useEffect(() => {
+    dashboardDataService
+      .getSource()
+      .then(setDataSource)
+      .catch(() => setDataSource('error'))
+  }, [])
 
   const selectedDoc = docsResource.data?.find((d) => d.id === docId)
   const dates = useMemo(() => [...new Set((memoriesResource.data ?? []).map((m) => m.date))], [memoriesResource.data])
@@ -116,6 +125,7 @@ export default function Home() {
           <div className="row" style={{ gap: 8 }}>
             <h2 style={{ margin: 0 }}>{activeView}</h2>
             <span className="badge">v1.0.4-beta</span>
+            <span className="badge">source:{dataSource}</span>
           </div>
           <AlertCircle size={18} color="#888" />
         </header>

@@ -7,6 +7,7 @@ import {
   ApiTask,
   ApiTeamMember,
   DashboardApiAdapter,
+  DashboardDataSource,
   UpdateTaskStatusRequest,
 } from '@/src/services/dashboardContracts'
 
@@ -64,5 +65,9 @@ export class ApiDashboardAdapter implements DashboardApiAdapter {
 
   getCalendarEvents() {
     return this.request<ApiCalendarEvent[]>('/calendar-events')
+  }
+
+  async getSource(): Promise<DashboardDataSource> {
+    return 'mock'
   }
 }
