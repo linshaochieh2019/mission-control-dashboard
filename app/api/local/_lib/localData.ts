@@ -254,6 +254,54 @@ const readWorkspaceData = async (workspaceRoot: string) => {
   return { memories, docs, projects }
 }
 
+const toTaskStatus = (status: string): ApiTask['status'] => {
+  if (status === 'ok') return 'Done'
+  if (status === 'running') return 'In Progress'
+  if (status === 'error' || status === 'failed') return 'Review'
+  return 'Backlog'
+}
+
+const buildLiveTasks = (sessions: LocalSessionOverview[], subagents: LocalSubagentStatus[], docs: ApiDocument[]): ApiTask[] => {
+  const fromSubagents: ApiTask[] = subagents.slice(0, 6).map((run, index) => ({
+    id: `task-subagent-${run.id}`,
+    title: `Subagent ${run.childSessionKey.split(':')[1] ?? index + 1}`,
+    description: run.endedReason ? `Latest status: ${run.endedReason}` : 'Awaiting final status',
+    assignee: (run.childSessionKey.split(':')[1] ?? 'A').slice(0, 1).toUpperCase(),
+    status: toTaskStatus(run.status),
+  }))
+
+  const reviewCandidate = sessions.find((s) => s.status !== 'ok')
+  const reviewTask: ApiTask[] = reviewCandidate
+    ? [
+        {
+          id: `task-review-${reviewCandidate.id}`,
+          title: 'Review abnormal run outcome',
+          description: `${reviewCandidate.label} finished with status ${reviewCandidate.status}`,
+          assignee: 'P',
+          status: 'Review',
+        },
+      ]
+    : []
+
+  const docsTask: ApiTask[] = docs.slice(0, 2).map((doc) => ({
+    id: `task-doc-${doc.id}`,
+    title: `Review ${doc.title}`,
+    description: `Keep ${doc.title} aligned with current execution state`,
+    assignee: 'J',
+    status: 'Backlog',
+  }))
+
+  return [...fromSubagents, ...reviewTask, ...docsTask].slice(0, 10)
+}
+
+const buildLiveCalendarEvents = (sessions: LocalSessionOverview[]): ApiCalendarEvent[] =>
+  sessions.slice(0, 8).map((session, index) => ({
+    id: `event-session-${session.id}`,
+    date: (session.startedAt || new Date().toISOString()).slice(0, 10),
+    label: session.label.length > 28 ? `${session.label.slice(0, 28)}…` : session.label,
+    variant: index === 0 ? 'highlight' : 'default',
+  }))
+
 export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayload> => {
   const workspaceRoot = resolveWorkspaceRoot()
   const openclawHome = resolveOpenClawHome()
@@ -265,8 +313,6 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       readWorkspaceData(workspaceRoot),
     ])
 
-    const tasks = structuredClone(mockTasks)
-
     const team: ApiTeamMember[] = subagents.slice(0, 6).map((item, index) => ({
       id: item.id,
       name: item.childSessionKey.split(':')[1] ?? `agent-${index + 1}`,
@@ -277,16 +323,21 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       deviceInfo: item.requesterSessionKey,
     }))
 
+    const tasks = buildLiveTasks(sessions, subagents, docs)
+    const calendarEvents = buildLiveCalendarEvents(sessions)
+    const effectiveTasks = tasks.length > 0 ? tasks : structuredClone(mockTasks)
+    const effectiveCalendarEvents = calendarEvents.length > 0 ? calendarEvents : structuredClone(mockCalendarEvents)
+
     return {
       source: 'local',
-      tasks,
+      tasks: effectiveTasks,
       activities,
       projects,
       memories,
       docs,
       team,
-      calendarEvents: structuredClone(mockCalendarEvents),
-      operations: buildOpsSnapshot(tasks, activities, sessions),
+      calendarEvents: effectiveCalendarEvents,
+      operations: buildOpsSnapshot(effectiveTasks, activities, sessions),
       sessions,
       subagents,
       warnings,

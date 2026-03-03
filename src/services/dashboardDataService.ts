@@ -187,7 +187,7 @@ export class ApiDashboardDataService implements DashboardDataService {
 
 export const createDashboardDataService = (
   baseUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_BASE_URL,
-  mode = process.env.NEXT_PUBLIC_DASHBOARD_DATA_MODE,
+  mode = process.env.NEXT_PUBLIC_DASHBOARD_DATA_MODE ?? 'local',
 ): DashboardDataService => {
   if (mode === 'local') {
     return new ApiDashboardDataService(new LocalDashboardAdapter())

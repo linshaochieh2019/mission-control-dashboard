@@ -25,10 +25,14 @@ interface LocalDashboardResponse {
 }
 
 export class LocalDashboardAdapter implements DashboardApiAdapter {
-  constructor(private readonly fetchImpl: typeof fetch = fetch) {}
+  constructor(private readonly fetchImpl?: typeof fetch) {}
 
   private async getPayload(): Promise<LocalDashboardResponse> {
-    const response = await this.fetchImpl('/api/local/dashboard', { cache: 'no-store' })
+    const fetchFn = this.fetchImpl
+      ? (input: RequestInfo | URL, init?: RequestInit) => this.fetchImpl!.call(globalThis, input, init)
+      : globalThis.fetch.bind(globalThis)
+
+    const response = await fetchFn('/api/local/dashboard', { cache: 'no-store' })
     if (!response.ok) {
       throw new Error(`Local dashboard request failed (${response.status})`)
     }
