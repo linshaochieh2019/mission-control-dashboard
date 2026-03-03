@@ -5,8 +5,9 @@ import { AnimatePresence, motion } from 'motion/react'
 import { AlertCircle, Brain, Calendar, ChevronLeft, ChevronRight, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
-import { AppView, CalendarEvent, Task } from '@/src/types'
+import { AppView, Task } from '@/src/types'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
+import { buildCalendarCells, shiftMonth, toEventMap } from '@/src/utils/calendar'
 
 const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Task Board', icon: LayoutDashboard },
@@ -16,23 +17,6 @@ const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Docs', icon: FileText },
   { id: 'Team', icon: Users },
 ]
-
-const formatDateKey = (date: Date) => {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-type CalendarCell =
-  | { key: string; empty: true }
-  | { key: string; empty: false; day: number; events: CalendarEvent[] }
-
-const toEventMap = (events: CalendarEvent[]) =>
-  events.reduce<Record<string, CalendarEvent[]>>((acc, event) => {
-    acc[event.date] = [...(acc[event.date] ?? []), event]
-    return acc
-  }, {})
 
 export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Task Board')
@@ -109,31 +93,10 @@ export default function Home() {
 
   const eventsByDate = useMemo(() => toEventMap(calendarEventsResource.data ?? []), [calendarEventsResource.data])
 
-  const calendarCells = useMemo(() => {
-    const year = calendarMonth.getFullYear()
-    const month = calendarMonth.getMonth()
-    const firstDay = new Date(year, month, 1)
-    const daysInMonth = new Date(year, month + 1, 0).getDate()
-    const firstWeekDay = (firstDay.getDay() + 6) % 7
+  const calendarCells = useMemo(() => buildCalendarCells(calendarMonth, eventsByDate), [calendarMonth, eventsByDate])
 
-    const leading: CalendarCell[] = Array.from({ length: firstWeekDay }, (_, idx) => ({ key: `lead-${idx}`, empty: true }))
-    const days: CalendarCell[] = Array.from({ length: daysInMonth }, (_, idx) => {
-      const day = idx + 1
-      const dayDate = new Date(year, month, day)
-      const dateKey = formatDateKey(dayDate)
-      return {
-        key: dateKey,
-        empty: false,
-        day,
-        events: eventsByDate[dateKey] ?? [],
-      }
-    })
-
-    return [...leading, ...days]
-  }, [calendarMonth, eventsByDate])
-
-  const goPrevMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-  const goNextMonth = () => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+  const goPrevMonth = () => setCalendarMonth((prev) => shiftMonth(prev, -1))
+  const goNextMonth = () => setCalendarMonth((prev) => shiftMonth(prev, 1))
   const goToday = () => setCalendarMonth(new Date())
 
   return (

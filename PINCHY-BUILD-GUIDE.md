@@ -236,3 +236,14 @@ Recommended order for building screens:
 6. **Docs** — Document list with search, filter, and preview panel
 
 Start with the sidebar navigation and screen-switching mechanism first, then build each screen one at a time.
+
+---
+
+## Validation Commands
+
+Use these commands before pushing changes:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm run build`
+- `npm run test` (Vitest + Testing Library)
