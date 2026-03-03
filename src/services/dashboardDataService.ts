@@ -3,6 +3,7 @@ import { Activity, CalendarEvent, Document, MemoryEntry, Project, Task, TeamMemb
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
+  updateTaskStatus(taskId: Task['id'], status: Task['status']): Promise<Task>
   getActivities(): Promise<Activity[]>
   getProjects(): Promise<Project[]>
   getMemories(): Promise<MemoryEntry[]>
@@ -17,8 +18,21 @@ const resolveWithLatency = async <T>(value: T, delayMs = 120): Promise<T> => {
 }
 
 class MockDashboardDataService implements DashboardDataService {
+  private tasks = structuredClone(mockTasks)
+
   getTasks() {
-    return resolveWithLatency(mockTasks)
+    return resolveWithLatency(this.tasks)
+  }
+
+  async updateTaskStatus(taskId: Task['id'], status: Task['status']) {
+    const taskIndex = this.tasks.findIndex((task) => task.id === taskId)
+
+    if (taskIndex === -1) {
+      throw new Error('Task not found')
+    }
+
+    this.tasks[taskIndex] = { ...this.tasks[taskIndex], status }
+    return resolveWithLatency(this.tasks[taskIndex], 180)
   }
 
   getActivities() {

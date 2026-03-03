@@ -37,6 +37,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Task Board')
   const [tasks, setTasks] = useState<Task[]>([])
   const [dragTaskId, setDragTaskId] = useState<string | null>(null)
+  const [taskPersistenceError, setTaskPersistenceError] = useState<string | null>(null)
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
   const [date, setDate] = useState<string>()
   const [docId, setDocId] = useState<string>()
@@ -72,9 +73,32 @@ export default function Home() {
   const dates = useMemo(() => [...new Set((memoriesResource.data ?? []).map((m) => m.date))], [memoriesResource.data])
   const visibleMemories = (memoriesResource.data ?? []).filter((m) => (memoryTab === 'Recent' ? m.date === date : m.isPinned))
 
-  const moveTask = (status: Task['status']) => {
+  const moveTask = async (status: Task['status']) => {
     if (!dragTaskId) return
-    setTasks((prev) => prev.map((task) => (task.id === dragTaskId ? { ...task, status } : task)))
+
+    const taskId = dragTaskId
+    let previousStatus: Task['status'] | null = null
+
+    setTaskPersistenceError(null)
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id === taskId) {
+          previousStatus = task.status
+          return { ...task, status }
+        }
+
+        return task
+      }),
+    )
+
+    if (!previousStatus) return
+
+    try {
+      await dashboardDataService.updateTaskStatus(taskId, status)
+    } catch {
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, status: previousStatus as Task['status'] } : task)))
+      setTaskPersistenceError('Could not save task move. Reverted to previous column.')
+    }
   }
 
   const calendarLabel = useMemo(
@@ -157,6 +181,7 @@ export default function Home() {
                     ))}
                   </div>
                   <div className="kanban">
+                    {taskPersistenceError && <div className="panel column muted">{taskPersistenceError}</div>}
                     {tasksResource.loading && <div className="panel column">Loading tasks…</div>}
                     {tasksResource.error && (
                       <div className="panel column">
