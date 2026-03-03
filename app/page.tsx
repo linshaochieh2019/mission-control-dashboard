@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { AnimatePresence, motion } from 'motion/react'
 import { AlertCircle, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
@@ -29,6 +30,13 @@ const dueSoon = (job: CronJob) => {
   if (!job.enabled || !job.nextRunTime) return false
   const delta = new Date(job.nextRunTime).getTime() - Date.now()
   return delta >= 0 && delta <= 60 * 60 * 1000
+}
+
+const agentAvatarByName: Record<string, string> = {
+  Pinchy: '/avatars/pinchy.png',
+  Inky: '/avatars/inky.png',
+  Coral: '/avatars/coral.jpg',
+  Bloop: '/avatars/bloop.png',
 }
 
 export default function Home() {
@@ -104,21 +112,61 @@ export default function Home() {
                         <div className="panel metric-card"><div className="muted">Active Runs</div><strong>{opsResource.data?.metrics.activeRuns}</strong></div>
                         <div className="panel metric-card"><div className="muted">Blocked Runs</div><strong>{opsResource.data?.metrics.blockedRuns}</strong></div>
                         <div className="panel metric-card"><div className="muted">QA Pass Rate (Today)</div><strong>{opsResource.data?.metrics.qaPassRateToday}%</strong></div>
-                        <div className="panel metric-card"><div className="muted">Median Cycle Time</div><strong>{opsResource.data?.metrics.medianCycleTimeHours}h</strong></div>
                         <div className="panel metric-card"><div className="muted">Last Successful Deploy</div><strong>{opsResource.data?.metrics.lastSuccessfulDeployCommit}</strong></div>
                       </div>
 
-                      <div className="ops-main-grid">
-                        <div className="panel ops-table-wrap">
-                          <div className="row" style={{ marginBottom: 10 }}><strong>Live Agent Operations</strong><span className="badge">{opsResource.data?.agents.length ?? 0} agents</span></div>
-                          <table className="ops-table"><thead><tr><th>Agent</th><th>Current Work</th><th>State</th><th>Since</th><th>Last Update</th><th>Run ID / Commit</th><th>Next Action</th></tr></thead><tbody>
-                            {(opsResource.data?.agents ?? []).map((agent) => <tr key={agent.id}><td>{agent.agent}</td><td>{agent.currentWork}</td><td><span className={`pill-state ${toneClassByState(agent.state)}`}>{agent.state}</span></td><td>{agent.since}</td><td>{agent.lastUpdate}</td><td><code>{agent.runIdOrCommit}</code></td><td>{agent.nextAction}</td></tr>)}
-                          </tbody></table>
+                      <div className="panel ops-table-wrap">
+                        <div className="row" style={{ marginBottom: 10 }}>
+                          <strong>Agent Status Overview</strong>
+                          <span className="badge">{opsResource.data?.agents.length ?? 0} agents</span>
                         </div>
-                        <div className="ops-side-panels">
-                          <div className="panel ops-timeline"><div className="row" style={{ marginBottom: 10 }}><strong>Execution Timeline</strong></div>{(opsResource.data?.timeline ?? []).map((event) => <div key={event.id} className="timeline-item"><div className="muted timeline-time">{event.timestamp}</div><div>{event.message}</div></div>)}</div>
-                          <div className="panel ops-lanes"><div className="row" style={{ marginBottom: 10 }}><strong>Pipeline Lanes</strong></div>{(opsResource.data?.lanes ?? []).map((lane) => <div key={lane.id} className="lane-block"><div className="row"><span>{lane.title}</span><span className="badge">{lane.count}</span></div><ul>{lane.items.slice(0, 3).map((item, idx) => <li key={`${lane.id}-${idx}`} className="muted">{item}</li>)}</ul></div>)}</div>
-                        </div>
+                        <table className="ops-table">
+                          <thead>
+                            <tr>
+                              <th>Agent</th>
+                              <th>State</th>
+                              <th>Current Work</th>
+                              <th>Since</th>
+                              <th>Last Update</th>
+                              <th>Run ID / Commit</th>
+                              <th>Next Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(opsResource.data?.agents ?? []).map((agent) => (
+                              <tr key={agent.id}>
+                                <td>
+                                  <div className="agent-cell">
+                                    <Image
+                                      src={agentAvatarByName[agent.agent] ?? '/avatars/pinchy.png'}
+                                      alt={`${agent.agent} avatar`}
+                                      width={24}
+                                      height={24}
+                                      className="agent-avatar"
+                                    />
+                                    <span>{agent.agent}</span>
+                                  </div>
+                                </td>
+                                <td><span className={`pill-state ${toneClassByState(agent.state)}`}>{agent.state}</span></td>
+                                <td>{agent.currentWork}</td>
+                                <td>{agent.since}</td>
+                                <td>{agent.lastUpdate}</td>
+                                <td><code>{agent.runIdOrCommit}</code></td>
+                                <td>{agent.nextAction}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="panel ops-timeline" style={{ marginTop: 14 }}>
+                        <div className="row" style={{ marginBottom: 10 }}><strong>Execution Timeline</strong></div>
+                        {(opsResource.data?.timeline ?? []).map((event) => (
+                          <div key={event.id} className="timeline-item">
+                            <div className="muted timeline-time">{event.timestamp}</div>
+                            <div>{event.message}</div>
+                          </div>
+                        ))}
                       </div>
                     </>
                   </ResourceState>

@@ -12,7 +12,7 @@ import {
   ApiTask,
   ApiTeamMember,
 } from '@/src/services/dashboardContracts'
-import { OpsAgentRow, OpsRunState, TaskStatus } from '@/src/types'
+import { OpsAgentRow, OpsRunState } from '@/src/types'
 
 export type DataSource = 'local' | 'mock' | 'error'
 
@@ -49,30 +49,51 @@ export interface LocalDashboardPayload {
   warnings: string[]
 }
 
-const statusToOpsState = (status: TaskStatus): OpsRunState => {
-  if (status === 'In Progress') return 'Running'
-  if (status === 'Review') return 'Waiting QA'
-  if (status === 'Backlog') return 'Blocked'
+const relativeMinutes = (iso?: string | null) => {
+  if (!iso) return 'N/A'
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return 'N/A'
+  const diffMin = Math.max(0, Math.round((Date.now() - ms) / 60000))
+  return `${diffMin}m ago`
+}
+
+const AGENT_ORDER = ['Pinchy', 'Inky', 'Coral', 'Bloop'] as const
+
+const stateFromRunStatus = (status?: string): OpsRunState => {
+  if (status === 'running') return 'Running'
+  if (status === 'error' || status === 'failed') return 'Blocked'
   return 'Idle'
 }
 
-const buildOpsSnapshot = (tasks: ApiTask[], activities: ApiActivity[], sessions: LocalSessionOverview[]): ApiOpsSnapshot => {
+const buildOpsSnapshot = (tasks: ApiTask[], activities: ApiActivity[], sessions: LocalSessionOverview[], subagents: LocalSubagentStatus[]): ApiOpsSnapshot => {
   const activeRuns = tasks.filter((task) => task.status === 'In Progress').length
   const blockedRuns = tasks.filter((task) => task.status === 'Backlog').length
   const qaRuns = tasks.filter((task) => task.status === 'Review').length
   const completedToday = tasks.filter((task) => task.status === 'Done').length
 
-  const agents: OpsAgentRow[] = tasks.slice(0, 10).map((task, index) => {
-    const linkedSession = sessions[index]
+  const latestRunByAgent = new Map<string, LocalSubagentStatus>()
+  for (const run of subagents) {
+    const raw = run.childSessionKey.split(':')[1] ?? ''
+    const agentName = raw ? `${raw.charAt(0).toUpperCase()}${raw.slice(1)}` : 'Unknown'
+    if (!latestRunByAgent.has(agentName)) latestRunByAgent.set(agentName, run)
+  }
+
+  const agents: OpsAgentRow[] = AGENT_ORDER.map((agentName) => {
+    const run = latestRunByAgent.get(agentName)
+    const state = run ? stateFromRunStatus(run.status) : 'Idle'
+    const currentWork = state === 'Idle' ? 'NULL' : run?.endedReason ?? 'Running task'
+    const since = run?.createdAt ? new Date(run.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A'
+    const lastUpdate = relativeMinutes(run?.createdAt)
+
     return {
-      id: `ops-${task.id}`,
-      agent: task.assignee,
-      currentWork: task.title,
-      state: statusToOpsState(task.status),
-      since: linkedSession?.startedAt ? new Date(linkedSession.startedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
-      lastUpdate: `${2 + index}m ago`,
-      runIdOrCommit: linkedSession?.id ?? `task-${task.id}`,
-      nextAction: task.status === 'Review' ? 'Need QA verification' : task.status === 'Backlog' ? 'Resolve blocker' : 'Continue execution',
+      id: `ops-agent-${agentName.toLowerCase()}`,
+      agent: agentName,
+      state,
+      currentWork,
+      since,
+      lastUpdate,
+      runIdOrCommit: run?.id ?? 'N/A',
+      nextAction: state === 'Running' ? 'Continue execution' : state === 'Blocked' ? 'Resolve blocker' : state === 'Waiting QA' ? 'Need QA verification' : 'Await assignment',
     }
   })
 
@@ -113,7 +134,7 @@ const withFallback = (warnings: string[]): LocalDashboardPayload => {
     docs: [],
     team: [],
     cronJobs: structuredClone(mockCronJobs),
-    operations: buildOpsSnapshot(tasks, activities, sessions),
+    operations: buildOpsSnapshot(tasks, activities, sessions, []),
     sessions,
     subagents: [],
     warnings,
@@ -193,10 +214,19 @@ const readCronJobs = async (openclawHome: string): Promise<ApiCronJob[]> => {
   }))
 }
 
+const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000
+
 const readSessionData = async (openclawHome: string) => {
   const runsPath = path.join(openclawHome, 'subagents', 'runs.json')
   const payload = await safeReadJson<{ runs?: Record<string, Record<string, unknown>> }>(runsPath)
-  const runs = Object.values(payload?.runs ?? {})
+  const allRuns = Object.values(payload?.runs ?? {})
+  const now = Date.now()
+  const runs = allRuns.filter((run) => {
+    const startedAt = Number((run.startedAt as number) ?? 0)
+    const endedAt = Number((run.endedAt as number) ?? 0)
+    const ts = startedAt || endedAt
+    return ts > 0 && now - ts <= RECENT_WINDOW_MS
+  })
 
   const sessions: LocalSessionOverview[] = runs
     .sort((a, b) => Number((b.startedAt as number) ?? 0) - Number((a.startedAt as number) ?? 0))
@@ -320,8 +350,8 @@ const toTaskStatus = (status: string): ApiTask['status'] => {
   return 'Backlog'
 }
 
-const buildLiveTasks = (sessions: LocalSessionOverview[], subagents: LocalSubagentStatus[], docs: ApiDocument[]): ApiTask[] => {
-  const fromSubagents: ApiTask[] = subagents.slice(0, 6).map((run, index) => ({
+const buildLiveTasks = (sessions: LocalSessionOverview[], subagents: LocalSubagentStatus[]): ApiTask[] => {
+  const fromSubagents: ApiTask[] = subagents.slice(0, 8).map((run, index) => ({
     id: `task-subagent-${run.id}`,
     title: `Subagent ${run.childSessionKey.split(':')[1] ?? index + 1}`,
     description: run.endedReason ? `Latest status: ${run.endedReason}` : 'Awaiting final status',
@@ -342,15 +372,7 @@ const buildLiveTasks = (sessions: LocalSessionOverview[], subagents: LocalSubage
       ]
     : []
 
-  const docsTask: ApiTask[] = docs.slice(0, 2).map((doc) => ({
-    id: `task-doc-${doc.id}`,
-    title: `Review ${doc.title}`,
-    description: `Keep ${doc.title} aligned with current execution state`,
-    assignee: 'J',
-    status: 'Backlog',
-  }))
-
-  return [...fromSubagents, ...reviewTask, ...docsTask].slice(0, 10)
+  return [...fromSubagents, ...reviewTask].slice(0, 10)
 }
 
 export const buildLocalCronJobsPayload = async () => {
@@ -384,7 +406,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       deviceInfo: item.requesterSessionKey,
     }))
 
-    const tasks = buildLiveTasks(sessions, subagents, docs)
+    const tasks = buildLiveTasks(sessions, subagents)
     const effectiveTasks = tasks.length > 0 ? tasks : structuredClone(mockTasks)
 
     return {
@@ -396,7 +418,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       docs,
       team,
       cronJobs: cronJobs.length > 0 ? cronJobs : structuredClone(mockCronJobs),
-      operations: buildOpsSnapshot(effectiveTasks, activities, sessions),
+      operations: buildOpsSnapshot(effectiveTasks, activities, sessions, subagents),
       sessions,
       subagents,
       warnings,
