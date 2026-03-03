@@ -6,6 +6,11 @@ import {
   DocumentCategory,
   DocumentFormat,
   MemoryEntry,
+  OpsAgentRow,
+  OpsMetricStrip,
+  OpsPipelineLane,
+  OpsSnapshot,
+  OpsTimelineEvent,
   Project,
   ProjectStatus,
   Task,
@@ -72,6 +77,13 @@ export interface ApiCalendarEvent {
   variant?: CalendarEventVariant
 }
 
+export interface ApiOpsSnapshot {
+  metrics: OpsMetricStrip
+  agents: OpsAgentRow[]
+  timeline: OpsTimelineEvent[]
+  lanes: OpsPipelineLane[]
+}
+
 export interface DashboardApiContract {
   tasks: ApiTask[]
   activities: ApiActivity[]
@@ -80,6 +92,7 @@ export interface DashboardApiContract {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   calendarEvents: ApiCalendarEvent[]
+  operations?: ApiOpsSnapshot
 }
 
 export interface UpdateTaskStatusRequest {
@@ -97,6 +110,7 @@ export interface DashboardApiAdapter {
   getDocs(): Promise<ApiDocument[]>
   getTeam(): Promise<ApiTeamMember[]>
   getCalendarEvents(): Promise<ApiCalendarEvent[]>
+  getOpsSnapshot?(): Promise<ApiOpsSnapshot>
   getSource?(): Promise<DashboardDataSource>
 }
 
@@ -107,3 +121,4 @@ export const toMemoryEntry = (memory: ApiMemoryEntry): MemoryEntry => ({ ...memo
 export const toDocument = (doc: ApiDocument): Document => ({ ...doc })
 export const toTeamMember = (member: ApiTeamMember): TeamMember => ({ ...member })
 export const toCalendarEvent = (event: ApiCalendarEvent): CalendarEvent => ({ ...event })
+export const toOpsSnapshot = (snapshot: ApiOpsSnapshot): OpsSnapshot => ({ ...snapshot })

@@ -2,7 +2,17 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { mockCalendarEvents, mockTasks } from '@/src/mockData'
-import { ApiActivity, ApiCalendarEvent, ApiDocument, ApiMemoryEntry, ApiProject, ApiTask, ApiTeamMember } from '@/src/services/dashboardContracts'
+import {
+  ApiActivity,
+  ApiCalendarEvent,
+  ApiDocument,
+  ApiMemoryEntry,
+  ApiOpsSnapshot,
+  ApiProject,
+  ApiTask,
+  ApiTeamMember,
+} from '@/src/services/dashboardContracts'
+import { OpsAgentRow, OpsRunState, TaskStatus } from '@/src/types'
 
 export type DataSource = 'local' | 'mock' | 'error'
 
@@ -33,24 +43,82 @@ export interface LocalDashboardPayload {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   calendarEvents: ApiCalendarEvent[]
+  operations: ApiOpsSnapshot
   sessions: LocalSessionOverview[]
   subagents: LocalSubagentStatus[]
   warnings: string[]
 }
 
-const withFallback = (warnings: string[]): LocalDashboardPayload => ({
-  source: warnings.length > 0 ? 'error' : 'mock',
-  tasks: structuredClone(mockTasks),
-  activities: [],
-  projects: [],
-  memories: [],
-  docs: [],
-  team: [],
-  calendarEvents: structuredClone(mockCalendarEvents),
-  sessions: [],
-  subagents: [],
-  warnings,
-})
+const statusToOpsState = (status: TaskStatus): OpsRunState => {
+  if (status === 'In Progress') return 'Running'
+  if (status === 'Review') return 'Waiting QA'
+  if (status === 'Backlog') return 'Blocked'
+  return 'Idle'
+}
+
+const buildOpsSnapshot = (tasks: ApiTask[], activities: ApiActivity[], sessions: LocalSessionOverview[]): ApiOpsSnapshot => {
+  const activeRuns = tasks.filter((task) => task.status === 'In Progress').length
+  const blockedRuns = tasks.filter((task) => task.status === 'Backlog').length
+  const qaRuns = tasks.filter((task) => task.status === 'Review').length
+  const completedToday = tasks.filter((task) => task.status === 'Done').length
+
+  const agents: OpsAgentRow[] = tasks.slice(0, 10).map((task, index) => {
+    const linkedSession = sessions[index]
+    return {
+      id: `ops-${task.id}`,
+      agent: task.assignee,
+      currentWork: task.title,
+      state: statusToOpsState(task.status),
+      since: linkedSession?.startedAt ? new Date(linkedSession.startedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A',
+      lastUpdate: `${2 + index}m ago`,
+      runIdOrCommit: linkedSession?.id ?? `task-${task.id}`,
+      nextAction: task.status === 'Review' ? 'Need QA verification' : task.status === 'Backlog' ? 'Resolve blocker' : 'Continue execution',
+    }
+  })
+
+  const latestDeployRun = sessions.find((session) => session.status === 'ok')
+
+  return {
+    metrics: {
+      activeRuns,
+      blockedRuns,
+      qaPassRateToday: qaRuns + completedToday === 0 ? 100 : Math.round((completedToday / (qaRuns + completedToday)) * 100),
+      medianCycleTimeHours: 4.6,
+      lastSuccessfulDeployCommit: latestDeployRun?.id.slice(0, 8) ?? 'N/A',
+    },
+    agents,
+    timeline: activities
+      .slice(0, 15)
+      .map((activity, idx) => ({ id: `timeline-${idx}-${activity.id}`, timestamp: activity.timestamp, message: activity.action, severity: idx === 0 ? 'success' : 'info' })),
+    lanes: [
+      { id: 'coding', title: 'Coding', count: activeRuns, items: tasks.filter((task) => task.status === 'In Progress').map((task) => `${task.assignee} · ${task.title}`) },
+      { id: 'qa', title: 'QA', count: qaRuns, items: tasks.filter((task) => task.status === 'Review').map((task) => `${task.assignee} · ${task.title}`) },
+      { id: 'fix-required', title: 'Fix Required', count: blockedRuns, items: tasks.filter((task) => task.status === 'Backlog').map((task) => `${task.assignee} · ${task.title}`) },
+      { id: 'completed-today', title: 'Completed Today', count: completedToday, items: tasks.filter((task) => task.status === 'Done').map((task) => `${task.assignee} · ${task.title}`) },
+    ],
+  }
+}
+
+const withFallback = (warnings: string[]): LocalDashboardPayload => {
+  const tasks = structuredClone(mockTasks)
+  const activities: ApiActivity[] = []
+  const sessions: LocalSessionOverview[] = []
+
+  return {
+    source: warnings.length > 0 ? 'error' : 'mock',
+    tasks,
+    activities,
+    projects: [],
+    memories: [],
+    docs: [],
+    team: [],
+    calendarEvents: structuredClone(mockCalendarEvents),
+    operations: buildOpsSnapshot(tasks, activities, sessions),
+    sessions,
+    subagents: [],
+    warnings,
+  }
+}
 
 const resolveWorkspaceRoot = () => process.env.OPENCLAW_WORKSPACE_ROOT ?? path.resolve(process.cwd(), '..')
 const resolveOpenClawHome = () => process.env.OPENCLAW_HOME ?? path.join(os.homedir(), '.openclaw')
@@ -197,6 +265,8 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       readWorkspaceData(workspaceRoot),
     ])
 
+    const tasks = structuredClone(mockTasks)
+
     const team: ApiTeamMember[] = subagents.slice(0, 6).map((item, index) => ({
       id: item.id,
       name: item.childSessionKey.split(':')[1] ?? `agent-${index + 1}`,
@@ -209,13 +279,14 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
 
     return {
       source: 'local',
-      tasks: structuredClone(mockTasks),
+      tasks,
       activities,
       projects,
       memories,
       docs,
       team,
       calendarEvents: structuredClone(mockCalendarEvents),
+      operations: buildOpsSnapshot(tasks, activities, sessions),
       sessions,
       subagents,
       warnings,

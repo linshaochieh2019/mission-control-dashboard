@@ -3,6 +3,7 @@ import {
   ApiCalendarEvent,
   ApiDocument,
   ApiMemoryEntry,
+  ApiOpsSnapshot,
   ApiProject,
   ApiTask,
   ApiTeamMember,
@@ -20,6 +21,7 @@ interface LocalDashboardResponse {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   calendarEvents: ApiCalendarEvent[]
+  operations: ApiOpsSnapshot
 }
 
 export class LocalDashboardAdapter implements DashboardApiAdapter {
@@ -70,6 +72,10 @@ export class LocalDashboardAdapter implements DashboardApiAdapter {
 
   async getCalendarEvents() {
     return (await this.getPayload()).calendarEvents
+  }
+
+  async getOpsSnapshot() {
+    return (await this.getPayload()).operations
   }
 
   async getSource() {

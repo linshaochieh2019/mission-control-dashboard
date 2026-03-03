@@ -1,18 +1,22 @@
-import { mockActivities, mockCalendarEvents, mockDocs, mockMemories, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
+import { mockActivities, mockCalendarEvents, mockDocs, mockMemories, mockOpsSnapshot, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
 import { ApiDashboardAdapter } from '@/src/services/apiDashboardAdapter'
 import { LocalDashboardAdapter } from '@/src/services/localDashboardAdapter'
 import {
+  ApiActivity,
+  ApiOpsSnapshot,
+  ApiTask,
   DashboardApiAdapter,
   DashboardDataSource,
   toActivity,
   toCalendarEvent,
   toDocument,
   toMemoryEntry,
+  toOpsSnapshot,
   toProject,
   toTask,
   toTeamMember,
 } from '@/src/services/dashboardContracts'
-import { Activity, CalendarEvent, Document, MemoryEntry, Project, Task, TaskStatus, TeamMember } from '@/src/types'
+import { Activity, CalendarEvent, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember } from '@/src/types'
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
@@ -23,12 +27,62 @@ export interface DashboardDataService {
   getDocs(): Promise<Document[]>
   getTeam(): Promise<TeamMember[]>
   getCalendarEvents(): Promise<CalendarEvent[]>
+  getOpsSnapshot(): Promise<OpsSnapshot>
   getSource(): Promise<DashboardDataSource>
 }
 
 const resolveWithLatency = async <T>(value: T, delayMs = 120): Promise<T> => {
   await new Promise((resolve) => setTimeout(resolve, delayMs))
   return structuredClone(value)
+}
+
+const deriveStateFromTaskStatus = (status: TaskStatus): OpsRunState => {
+  if (status === 'In Progress') return 'Running'
+  if (status === 'Review') return 'Waiting QA'
+  if (status === 'Backlog') return 'Blocked'
+  return 'Idle'
+}
+
+const deriveOpsSnapshot = (tasks: ApiTask[], activities: ApiActivity[]): ApiOpsSnapshot => {
+  const activeRuns = tasks.filter((task) => task.status === 'In Progress').length
+  const blockedRuns = tasks.filter((task) => task.status === 'Backlog').length
+  const reviewedToday = tasks.filter((task) => task.status === 'Review').length
+  const completedToday = tasks.filter((task) => task.status === 'Done').length
+  const qaPassRateToday = reviewedToday + completedToday === 0 ? 100 : Math.round((completedToday / (reviewedToday + completedToday)) * 100)
+
+  const agents: OpsAgentRow[] = tasks.slice(0, 8).map((task, index) => ({
+    id: `agent-row-${task.id}`,
+    agent: task.assignee,
+    currentWork: task.title,
+    state: deriveStateFromTaskStatus(task.status),
+    since: `${9 + (index % 6)}:${String((index * 11) % 60).padStart(2, '0')}`,
+    lastUpdate: `${2 + index}m ago`,
+    runIdOrCommit: `run-${task.id}`,
+    nextAction: task.status === 'Review' ? 'Await QA signal' : task.status === 'Backlog' ? 'Unblock requirements' : 'Continue execution',
+  }))
+
+  return {
+    metrics: {
+      activeRuns,
+      blockedRuns,
+      qaPassRateToday,
+      medianCycleTimeHours: 4.8,
+      lastSuccessfulDeployCommit: 'local-mode',
+    },
+    agents,
+    timeline: activities.slice(0, 12).map((activity) => ({
+      id: activity.id,
+      timestamp: activity.timestamp,
+      message: activity.action,
+      severity: 'info',
+    })),
+    lanes: [
+      { id: 'coding', title: 'Coding', count: activeRuns, items: tasks.filter((task) => task.status === 'In Progress').map((task) => task.title) },
+      { id: 'qa', title: 'QA', count: reviewedToday, items: tasks.filter((task) => task.status === 'Review').map((task) => task.title) },
+      { id: 'fix-required', title: 'Fix Required', count: blockedRuns, items: tasks.filter((task) => task.status === 'Backlog').map((task) => task.title) },
+      { id: 'completed-today', title: 'Completed Today', count: completedToday, items: tasks.filter((task) => task.status === 'Done').map((task) => task.title) },
+    ],
+  }
 }
 
 export class MockDashboardDataService implements DashboardDataService {
@@ -73,6 +127,10 @@ export class MockDashboardDataService implements DashboardDataService {
     return resolveWithLatency(mockCalendarEvents)
   }
 
+  getOpsSnapshot() {
+    return resolveWithLatency(mockOpsSnapshot)
+  }
+
   getSource() {
     return resolveWithLatency<DashboardDataSource>('mock', 0)
   }
@@ -111,6 +169,15 @@ export class ApiDashboardDataService implements DashboardDataService {
 
   async getCalendarEvents() {
     return (await this.adapter.getCalendarEvents()).map(toCalendarEvent)
+  }
+
+  async getOpsSnapshot() {
+    if (this.adapter.getOpsSnapshot) {
+      return toOpsSnapshot(await this.adapter.getOpsSnapshot())
+    }
+
+    const [tasks, activities] = await Promise.all([this.adapter.getTasks(), this.adapter.getActivities()])
+    return toOpsSnapshot(deriveOpsSnapshot(tasks, activities))
   }
 
   async getSource() {

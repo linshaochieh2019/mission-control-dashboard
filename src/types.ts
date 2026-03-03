@@ -1,4 +1,4 @@
-export type AppView = 'Task Board' | 'Calendar' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Calendar' | 'Projects' | 'Memory' | 'Docs' | 'Team'
 
 export type TaskStatus = 'Backlog' | 'In Progress' | 'Review' | 'Done'
 
@@ -67,4 +67,46 @@ export interface CalendarEvent {
   date: string
   label: string
   variant?: CalendarEventVariant
+}
+
+export type OpsRunState = 'Running' | 'Waiting QA' | 'Blocked' | 'Idle'
+
+export interface OpsMetricStrip {
+  activeRuns: number
+  blockedRuns: number
+  qaPassRateToday: number
+  medianCycleTimeHours: number
+  lastSuccessfulDeployCommit: string
+}
+
+export interface OpsAgentRow {
+  id: string
+  agent: string
+  currentWork: string
+  state: OpsRunState
+  since: string
+  lastUpdate: string
+  runIdOrCommit: string
+  nextAction: string
+}
+
+export interface OpsTimelineEvent {
+  id: string
+  timestamp: string
+  message: string
+  severity?: 'info' | 'warning' | 'success'
+}
+
+export interface OpsPipelineLane {
+  id: 'coding' | 'qa' | 'fix-required' | 'completed-today'
+  title: 'Coding' | 'QA' | 'Fix Required' | 'Completed Today'
+  count: number
+  items: string[]
+}
+
+export interface OpsSnapshot {
+  metrics: OpsMetricStrip
+  agents: OpsAgentRow[]
+  timeline: OpsTimelineEvent[]
+  lanes: OpsPipelineLane[]
 }

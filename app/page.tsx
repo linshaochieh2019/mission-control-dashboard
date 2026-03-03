@@ -2,16 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertCircle, Brain, Calendar, ChevronLeft, ChevronRight, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
+import {
+  AlertCircle,
+  Brain,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  FolderKanban,
+  LayoutDashboard,
+  Users,
+} from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
-import { AppView, Task } from '@/src/types'
+import { AppView } from '@/src/types'
 import { DashboardDataSource } from '@/src/services/dashboardContracts'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
 import { buildCalendarCells, shiftMonth, toEventMap } from '@/src/utils/calendar'
 
 const views: { id: AppView; icon: React.ElementType }[] = [
-  { id: 'Task Board', icon: LayoutDashboard },
+  { id: 'Live Agent Operations', icon: LayoutDashboard },
   { id: 'Calendar', icon: Calendar },
   { id: 'Projects', icon: FolderKanban },
   { id: 'Memory', icon: Brain },
@@ -19,30 +29,27 @@ const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Team', icon: Users },
 ]
 
+const toneClassByState = (state: string) => {
+  if (state === 'Running') return 'tone-running'
+  if (state === 'Waiting QA') return 'tone-qa'
+  if (state === 'Blocked') return 'tone-blocked'
+  return 'tone-idle'
+}
+
 export default function Home() {
-  const [activeView, setActiveView] = useState<AppView>('Task Board')
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [dragTaskId, setDragTaskId] = useState<string | null>(null)
-  const [taskPersistenceError, setTaskPersistenceError] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<AppView>('Live Agent Operations')
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
   const [date, setDate] = useState<string>()
   const [docId, setDocId] = useState<string>()
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(2026, 2, 1))
   const [dataSource, setDataSource] = useState<DashboardDataSource>('mock')
 
-  const tasksResource = useAsyncResource(useCallback(() => dashboardDataService.getTasks(), []))
-  const activitiesResource = useAsyncResource(useCallback(() => dashboardDataService.getActivities(), []))
+  const opsResource = useAsyncResource(useCallback(() => dashboardDataService.getOpsSnapshot(), []))
   const projectsResource = useAsyncResource(useCallback(() => dashboardDataService.getProjects(), []))
   const memoriesResource = useAsyncResource(useCallback(() => dashboardDataService.getMemories(), []))
   const docsResource = useAsyncResource(useCallback(() => dashboardDataService.getDocs(), []))
   const teamResource = useAsyncResource(useCallback(() => dashboardDataService.getTeam(), []))
   const calendarEventsResource = useAsyncResource(useCallback(() => dashboardDataService.getCalendarEvents(), []))
-
-  useEffect(() => {
-    if (tasksResource.data) {
-      setTasks(tasksResource.data)
-    }
-  }, [tasksResource.data])
 
   useEffect(() => {
     if (!date && memoriesResource.data?.[0]) {
@@ -67,34 +74,6 @@ export default function Home() {
   const dates = useMemo(() => [...new Set((memoriesResource.data ?? []).map((m) => m.date))], [memoriesResource.data])
   const visibleMemories = (memoriesResource.data ?? []).filter((m) => (memoryTab === 'Recent' ? m.date === date : m.isPinned))
 
-  const moveTask = async (status: Task['status']) => {
-    if (!dragTaskId) return
-
-    const taskId = dragTaskId
-    let previousStatus: Task['status'] | null = null
-
-    setTaskPersistenceError(null)
-    setTasks((prev) =>
-      prev.map((task) => {
-        if (task.id === taskId) {
-          previousStatus = task.status
-          return { ...task, status }
-        }
-
-        return task
-      }),
-    )
-
-    if (!previousStatus) return
-
-    try {
-      await dashboardDataService.updateTaskStatus(taskId, status)
-    } catch {
-      setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, status: previousStatus as Task['status'] } : task)))
-      setTaskPersistenceError('Could not save task move. Reverted to previous column.')
-    }
-  }
-
   const calendarLabel = useMemo(
     () => calendarMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
     [calendarMonth],
@@ -114,7 +93,7 @@ export default function Home() {
         {views.map((v) => {
           const Icon = v.icon
           return (
-            <button key={v.id} className={`nav-btn ${activeView === v.id ? 'active' : ''}`} onClick={() => setActiveView(v.id)}>
+            <button key={v.id} className={`nav-btn ${activeView === v.id ? 'active' : ''}`} onClick={() => setActiveView(v.id)} title={v.id}>
               <Icon size={18} />
             </button>
           )
@@ -124,7 +103,7 @@ export default function Home() {
         <header className="header">
           <div className="row" style={{ gap: 8 }}>
             <h2 style={{ margin: 0 }}>{activeView}</h2>
-            <span className="badge">v1.0.4-beta</span>
+            <span className="badge">v2.0.0-ops</span>
             <span className="badge">source:{dataSource}</span>
           </div>
           <AlertCircle size={18} color="#888" />
@@ -133,57 +112,89 @@ export default function Home() {
         <section className="content">
           <AnimatePresence mode="wait">
             <motion.div key={activeView} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ height: '100%' }}>
-              {activeView === 'Task Board' && (
-                <div className="task-grid">
-                  <div className="panel activity">
-                    <div className="muted">Live Activity</div>
-                    <ResourceState
-                      loading={activitiesResource.loading}
-                      error={activitiesResource.error}
-                      isEmpty={(activitiesResource.data ?? []).length === 0}
-                      loadingMessage="Loading activity…"
-                      errorMessage={(error) => `Failed to load activity: ${error}`}
-                      emptyMessage="No activity yet."
-                      onRetry={activitiesResource.reload}
-                      loadingClassName="muted"
-                      errorClassName=""
-                      emptyClassName="muted"
-                    >
-                      {(activitiesResource.data ?? []).map((a) => (
-                        <div key={a.id} style={{ marginTop: 10 }}>
-                          <div style={{ fontFamily: 'JetBrains Mono', color: '#888', fontSize: 11 }}>{a.timestamp}</div>
-                          <div style={{ fontSize: 13 }}>{a.action}</div>
+              {activeView === 'Live Agent Operations' && (
+                <div className="ops-layout">
+                  <ResourceState
+                    loading={opsResource.loading}
+                    error={opsResource.error}
+                    isEmpty={!opsResource.data}
+                    loadingMessage="Loading live operations…"
+                    errorMessage={(error) => `Failed to load operations: ${error}`}
+                    emptyMessage="No operations snapshot available."
+                    onRetry={opsResource.reload}
+                    loadingClassName="panel muted"
+                    errorClassName="panel"
+                    emptyClassName="panel muted"
+                  >
+                    <>
+                      <div className="ops-metrics">
+                        <div className="panel metric-card"><div className="muted">Active Runs</div><strong>{opsResource.data?.metrics.activeRuns}</strong></div>
+                        <div className="panel metric-card"><div className="muted">Blocked Runs</div><strong>{opsResource.data?.metrics.blockedRuns}</strong></div>
+                        <div className="panel metric-card"><div className="muted">QA Pass Rate (Today)</div><strong>{opsResource.data?.metrics.qaPassRateToday}%</strong></div>
+                        <div className="panel metric-card"><div className="muted">Median Cycle Time</div><strong>{opsResource.data?.metrics.medianCycleTimeHours}h</strong></div>
+                        <div className="panel metric-card"><div className="muted">Last Successful Deploy</div><strong>{opsResource.data?.metrics.lastSuccessfulDeployCommit}</strong></div>
+                      </div>
+
+                      <div className="ops-main-grid">
+                        <div className="panel ops-table-wrap">
+                          <div className="row" style={{ marginBottom: 10 }}>
+                            <strong>Live Agent Operations</strong>
+                            <span className="badge">{opsResource.data?.agents.length ?? 0} agents</span>
+                          </div>
+                          <table className="ops-table">
+                            <thead>
+                              <tr>
+                                <th>Agent</th>
+                                <th>Current Work</th>
+                                <th>State</th>
+                                <th>Since</th>
+                                <th>Last Update</th>
+                                <th>Run ID / Commit</th>
+                                <th>Next Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(opsResource.data?.agents ?? []).map((agent) => (
+                                <tr key={agent.id}>
+                                  <td>{agent.agent}</td>
+                                  <td>{agent.currentWork}</td>
+                                  <td><span className={`pill-state ${toneClassByState(agent.state)}`}>{agent.state}</span></td>
+                                  <td>{agent.since}</td>
+                                  <td>{agent.lastUpdate}</td>
+                                  <td><code>{agent.runIdOrCommit}</code></td>
+                                  <td>{agent.nextAction}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
-                      ))}
-                    </ResourceState>
-                  </div>
-                  <div className="kanban">
-                    {taskPersistenceError && <div className="panel column muted">{taskPersistenceError}</div>}
-                    <ResourceState
-                      loading={tasksResource.loading}
-                      error={tasksResource.error}
-                      isEmpty={tasks.length === 0}
-                      loadingMessage="Loading tasks…"
-                      errorMessage={(error) => `Failed to load tasks: ${error}`}
-                      emptyMessage="No tasks found."
-                      onRetry={tasksResource.reload}
-                      loadingClassName="panel column"
-                      errorClassName="panel column"
-                      emptyClassName="panel column muted"
-                    >
-                      {(['Backlog', 'In Progress', 'Review', 'Done'] as const).map((col) => (
-                        <div className="panel column" key={col} onDragOver={(e) => e.preventDefault()} onDrop={() => moveTask(col)}>
-                          <div className="row"><strong style={{ fontSize: 13 }}>{col}</strong><span className="badge">{tasks.filter((t) => t.status === col).length}</span></div>
-                          {tasks.filter((t) => t.status === col).map((t) => (
-                            <article key={t.id} className="task" draggable onDragStart={() => setDragTaskId(t.id)} onDragEnd={() => setDragTaskId(null)}>
-                              <div className="row"><strong style={{ fontSize: 12 }}>{t.title}</strong><span className="badge">{t.assignee}</span></div>
-                              <p className="muted">{t.description}</p>
-                            </article>
-                          ))}
+
+                        <div className="ops-side-panels">
+                          <div className="panel ops-timeline">
+                            <div className="row" style={{ marginBottom: 10 }}><strong>Execution Timeline</strong></div>
+                            {(opsResource.data?.timeline ?? []).map((event) => (
+                              <div key={event.id} className="timeline-item">
+                                <div className="muted timeline-time">{event.timestamp}</div>
+                                <div>{event.message}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="panel ops-lanes">
+                            <div className="row" style={{ marginBottom: 10 }}><strong>Pipeline Lanes</strong></div>
+                            {(opsResource.data?.lanes ?? []).map((lane) => (
+                              <div key={lane.id} className="lane-block">
+                                <div className="row"><span>{lane.title}</span><span className="badge">{lane.count}</span></div>
+                                <ul>
+                                  {lane.items.slice(0, 3).map((item, idx) => <li key={`${lane.id}-${idx}`} className="muted">{item}</li>)}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
-                    </ResourceState>
-                  </div>
+                      </div>
+                    </>
+                  </ResourceState>
                 </div>
               )}
 
@@ -332,8 +343,8 @@ export default function Home() {
               {activeView === 'Team' && (
                 <div className="team">
                   <div className="panel" style={{ padding: 20, textAlign: 'center' }}>
-                    <em style={{ color: '#8cb4ff' }}>&quot;Building the future of autonomous agent orchestration.&quot;</em>
-                    <p className="muted">Mission Statement: Human intent to machine execution.</p>
+                    <em style={{ color: '#8cb4ff' }}>&quot;Operational clarity first: who is running what right now.&quot;</em>
+                    <p className="muted">Mission statement shifted from board management to live execution visibility.</p>
                   </div>
                   <div className="team-grid">
                     <ResourceState
