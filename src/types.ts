@@ -1,4 +1,4 @@
-export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Workspace Projects' | 'Memory' | 'Docs' | 'Team'
 
 export type TaskStatus = 'Backlog' | 'In Progress' | 'Review' | 'Done'
 
@@ -114,4 +114,18 @@ export interface OpsSnapshot {
   agents: OpsAgentRow[]
   timeline: OpsTimelineEvent[]
   lanes: OpsPipelineLane[]
+}
+
+export type WorkspaceProjectTag = 'active' | 'legacy-candidate' | 'experimental'
+
+export interface WorkspaceProject {
+  id: string
+  name: string
+  path: string
+  lastModified: string
+  sizeBytes: number
+  isGitRepo: boolean
+  gitBranch: string | null
+  gitStatusSummary: string
+  tag: WorkspaceProjectTag
 }

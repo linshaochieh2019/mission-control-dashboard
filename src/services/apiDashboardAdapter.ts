@@ -6,6 +6,7 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceProject,
   DashboardApiAdapter,
   DashboardDataSource,
   UpdateTaskStatusRequest,
@@ -65,6 +66,10 @@ export class ApiDashboardAdapter implements DashboardApiAdapter {
 
   getCronJobs() {
     return this.request<ApiCronJob[]>('/cron-jobs')
+  }
+
+  getWorkspaceProjects() {
+    return this.request<ApiWorkspaceProject[]>('/workspace-projects').catch(() => [])
   }
 
   async getSource(): Promise<DashboardDataSource> {

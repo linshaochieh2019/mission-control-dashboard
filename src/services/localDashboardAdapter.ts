@@ -7,6 +7,7 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceProject,
   DashboardApiAdapter,
   DashboardDataSource,
   UpdateTaskStatusRequest,
@@ -21,6 +22,7 @@ interface LocalDashboardResponse {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   cronJobs: ApiCronJob[]
+  workspaceProjects: ApiWorkspaceProject[]
   operations: ApiOpsSnapshot
 }
 
@@ -76,6 +78,10 @@ export class LocalDashboardAdapter implements DashboardApiAdapter {
 
   async getCronJobs() {
     return (await this.getPayload()).cronJobs
+  }
+
+  async getWorkspaceProjects() {
+    return (await this.getPayload()).workspaceProjects ?? []
   }
 
   async getOpsSnapshot() {

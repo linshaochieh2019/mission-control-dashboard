@@ -11,8 +11,9 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceProject,
 } from '@/src/services/dashboardContracts'
-import { OpsAgentRow, OpsRunState, TaskStatus } from '@/src/types'
+import { OpsAgentRow, OpsRunState, TaskStatus, WorkspaceProjectTag } from '@/src/types'
 
 export type DataSource = 'local' | 'mock' | 'error'
 
@@ -43,6 +44,7 @@ export interface LocalDashboardPayload {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   cronJobs: ApiCronJob[]
+  workspaceProjects: ApiWorkspaceProject[]
   operations: ApiOpsSnapshot
   sessions: LocalSessionOverview[]
   subagents: LocalSubagentStatus[]
@@ -113,6 +115,7 @@ const withFallback = (warnings: string[]): LocalDashboardPayload => {
     docs: [],
     team: [],
     cronJobs: structuredClone(mockCronJobs),
+    workspaceProjects: [],
     operations: buildOpsSnapshot(tasks, activities, sessions),
     sessions,
     subagents: [],
@@ -121,6 +124,7 @@ const withFallback = (warnings: string[]): LocalDashboardPayload => {
 }
 
 const resolveWorkspaceRoot = () => process.env.OPENCLAW_WORKSPACE_ROOT ?? path.resolve(process.cwd(), '..')
+const resolveWorkspaceProjectsRoot = () => process.env.OPENCLAW_WORKSPACE_COLLECTION_ROOT ?? path.join(os.homedir(), '.openclaw', 'workspace')
 const resolveOpenClawHome = () => process.env.OPENCLAW_HOME ?? path.join(os.homedir(), '.openclaw')
 
 const safeReadJson = async <T>(filePath: string): Promise<T | null> => {
@@ -232,6 +236,95 @@ const readSessionData = async (openclawHome: string) => {
 }
 
 const summarizeText = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 140)
+
+const NOISE_DIRS = new Set(['node_modules', '.git', '.next', '.DS_Store', 'dist', 'build', '.turbo', '.cache'])
+
+const estimateDirectorySize = async (targetPath: string, depth = 0): Promise<number> => {
+  if (depth > 3) return 0
+  const entries = await fs.readdir(targetPath, { withFileTypes: true }).catch(() => [])
+  let total = 0
+
+  for (const entry of entries) {
+    if (NOISE_DIRS.has(entry.name)) continue
+    if (entry.name.startsWith('.') && entry.name !== '.github') continue
+
+    const fullPath = path.join(targetPath, entry.name)
+    if (entry.isFile()) {
+      const stat = await fs.stat(fullPath).catch(() => null)
+      total += stat?.size ?? 0
+      continue
+    }
+
+    if (entry.isDirectory()) {
+      total += await estimateDirectorySize(fullPath, depth + 1)
+    }
+  }
+
+  return total
+}
+
+const summarizeGitStatus = async (projectPath: string): Promise<{ isGitRepo: boolean; gitBranch: string | null; gitStatusSummary: string }> => {
+  const gitDir = path.join(projectPath, '.git')
+  const isGitRepo = Boolean(await fs.stat(gitDir).catch(() => null))
+  if (!isGitRepo) return { isGitRepo: false, gitBranch: null, gitStatusSummary: 'not a git repo' }
+
+  const headContent = await fs.readFile(path.join(gitDir, 'HEAD'), 'utf8').catch(() => '')
+  const branchMatch = headContent.match(/ref:\s+refs\/heads\/(.+)/)
+  const gitBranch = branchMatch?.[1] ?? 'detached'
+
+  const statusOutput = await fs.readFile(path.join(gitDir, 'FETCH_HEAD'), 'utf8').catch(() => '')
+  const indexStat = await fs.stat(path.join(gitDir, 'index')).catch(() => null)
+  const recentlyTouched = indexStat && Date.now() - indexStat.mtimeMs < 1000 * 60 * 60 * 24 * 3
+  const hasFetch = statusOutput.trim().length > 0
+  const gitStatusSummary = recentlyTouched ? 'recent activity' : hasFetch ? 'tracked' : 'clean'
+
+  return { isGitRepo: true, gitBranch, gitStatusSummary }
+}
+
+const classifyProjectTag = (name: string, mtimeMs: number, gitSummary: { isGitRepo: boolean; gitStatusSummary: string }): WorkspaceProjectTag => {
+  const lower = name.toLowerCase()
+  if (/exp|sandbox|playground|prototype|poc|lab/.test(lower)) return 'experimental'
+
+  const ageDays = (Date.now() - mtimeMs) / (1000 * 60 * 60 * 24)
+  if (ageDays > 90) return 'legacy-candidate'
+  if (!gitSummary.isGitRepo && ageDays > 45) return 'legacy-candidate'
+  if (gitSummary.gitStatusSummary === 'recent activity') return 'active'
+
+  return ageDays < 30 ? 'active' : 'legacy-candidate'
+}
+
+const readWorkspaceProjects = async (workspaceProjectsRoot: string): Promise<ApiWorkspaceProject[]> => {
+  const entries = await fs.readdir(workspaceProjectsRoot, { withFileTypes: true }).catch(() => [])
+  const candidates = entries.filter((entry) => {
+    if (!entry.isDirectory()) return false
+    if (NOISE_DIRS.has(entry.name)) return false
+    if (entry.name.startsWith('.')) return entry.name === '.github'
+    return true
+  })
+
+  const projects = await Promise.all(
+    candidates.map(async (entry) => {
+      const projectPath = path.join(workspaceProjectsRoot, entry.name)
+      const stat = await fs.stat(projectPath).catch(() => null)
+      if (!stat?.isDirectory()) return null
+
+      const [sizeBytes, gitStatus] = await Promise.all([estimateDirectorySize(projectPath), summarizeGitStatus(projectPath)])
+      return {
+        id: `workspace-${entry.name}`,
+        name: entry.name,
+        path: projectPath,
+        lastModified: stat.mtime.toISOString(),
+        sizeBytes,
+        isGitRepo: gitStatus.isGitRepo,
+        gitBranch: gitStatus.gitBranch,
+        gitStatusSummary: gitStatus.gitStatusSummary,
+        tag: classifyProjectTag(entry.name, stat.mtimeMs, gitStatus),
+      } as ApiWorkspaceProject
+    }),
+  )
+
+  return projects.filter((item): item is ApiWorkspaceProject => Boolean(item))
+}
 
 const readWorkspaceData = async (workspaceRoot: string) => {
   const memoryDir = path.join(workspaceRoot, 'memory')
@@ -364,14 +457,16 @@ export const buildLocalCronJobsPayload = async () => {
 
 export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayload> => {
   const workspaceRoot = resolveWorkspaceRoot()
+  const workspaceProjectsRoot = resolveWorkspaceProjectsRoot()
   const openclawHome = resolveOpenClawHome()
   const warnings: string[] = []
 
   try {
-    const [{ sessions, subagents, activities }, { memories, docs, projects }, cronJobs] = await Promise.all([
+    const [{ sessions, subagents, activities }, { memories, docs, projects }, cronJobs, workspaceProjects] = await Promise.all([
       readSessionData(openclawHome),
       readWorkspaceData(workspaceRoot),
       readCronJobs(openclawHome),
+      readWorkspaceProjects(workspaceProjectsRoot),
     ])
 
     const team: ApiTeamMember[] = subagents.slice(0, 6).map((item, index) => ({
@@ -396,6 +491,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       docs,
       team,
       cronJobs: cronJobs.length > 0 ? cronJobs : structuredClone(mockCronJobs),
+      workspaceProjects,
       operations: buildOpsSnapshot(effectiveTasks, activities, sessions),
       sessions,
       subagents,

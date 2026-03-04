@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertCircle, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
+import { AlertCircle, ArrowDownUp, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
-import { AppView, CronJob } from '@/src/types'
+import { AppView, CronJob, WorkspaceProject } from '@/src/types'
 import { DashboardDataSource } from '@/src/services/dashboardContracts'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
 
@@ -13,6 +13,7 @@ const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Live Agent Operations', icon: LayoutDashboard },
   { id: 'Cron Jobs', icon: Clock3 },
   { id: 'Projects', icon: FolderKanban },
+  { id: 'Workspace Projects', icon: FolderKanban },
   { id: 'Memory', icon: Brain },
   { id: 'Docs', icon: FileText },
   { id: 'Team', icon: Users },
@@ -31,6 +32,28 @@ const dueSoon = (job: CronJob) => {
   return delta >= 0 && delta <= 60 * 60 * 1000
 }
 
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let idx = 0
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024
+    idx += 1
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[idx]}`
+}
+
+const sortWorkspaceProjects = (projects: WorkspaceProject[], key: 'name' | 'lastModified' | 'sizeBytes' | 'tag', direction: 'asc' | 'desc') => {
+  const sorted = [...projects].sort((a, b) => {
+    if (key === 'name' || key === 'tag') return String(a[key]).localeCompare(String(b[key]))
+    if (key === 'lastModified') return new Date(a.lastModified).getTime() - new Date(b.lastModified).getTime()
+    return a.sizeBytes - b.sizeBytes
+  })
+
+  return direction === 'asc' ? sorted : sorted.reverse()
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Live Agent Operations')
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
@@ -38,6 +61,10 @@ export default function Home() {
   const [docId, setDocId] = useState<string>()
   const [dataSource, setDataSource] = useState<DashboardDataSource>('mock')
   const [cronFilter, setCronFilter] = useState<'all' | 'system' | 'project-temp'>('all')
+  const [workspaceTagFilter, setWorkspaceTagFilter] = useState<'all' | 'active' | 'legacy-candidate' | 'experimental'>('all')
+  const [workspaceSortKey, setWorkspaceSortKey] = useState<'name' | 'lastModified' | 'sizeBytes' | 'tag'>('lastModified')
+  const [workspaceSortDirection, setWorkspaceSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [workspaceRepoFilter, setWorkspaceRepoFilter] = useState<'all' | 'repo' | 'non-repo'>('all')
 
   const opsResource = useAsyncResource(useCallback(() => dashboardDataService.getOpsSnapshot(), []))
   const projectsResource = useAsyncResource(useCallback(() => dashboardDataService.getProjects(), []))
@@ -45,6 +72,7 @@ export default function Home() {
   const docsResource = useAsyncResource(useCallback(() => dashboardDataService.getDocs(), []))
   const teamResource = useAsyncResource(useCallback(() => dashboardDataService.getTeam(), []))
   const cronJobsResource = useAsyncResource(useCallback(() => dashboardDataService.getCronJobs(), []))
+  const workspaceProjectsResource = useAsyncResource(useCallback(() => dashboardDataService.getWorkspaceProjects(), []))
 
   useEffect(() => {
     if (!date && memoriesResource.data?.[0]) setDate(memoriesResource.data[0].date)
@@ -69,6 +97,27 @@ export default function Home() {
     enabled: cronJobs.filter((job) => job.enabled).length,
     disabled: cronJobs.filter((job) => !job.enabled).length,
     dueSoon: cronJobs.filter(dueSoon).length,
+  }
+
+  const workspaceProjects = workspaceProjectsResource.data ?? []
+  const filteredWorkspaceProjects = workspaceProjects
+    .filter((project) => (workspaceTagFilter === 'all' ? true : project.tag === workspaceTagFilter))
+    .filter((project) => (workspaceRepoFilter === 'all' ? true : workspaceRepoFilter === 'repo' ? project.isGitRepo : !project.isGitRepo))
+  const visibleWorkspaceProjects = sortWorkspaceProjects(filteredWorkspaceProjects, workspaceSortKey, workspaceSortDirection)
+  const workspaceMetrics = {
+    total: workspaceProjects.length,
+    active: workspaceProjects.filter((project) => project.tag === 'active').length,
+    legacyCandidate: workspaceProjects.filter((project) => project.tag === 'legacy-candidate').length,
+    experimental: workspaceProjects.filter((project) => project.tag === 'experimental').length,
+  }
+
+  const toggleWorkspaceSort = (key: 'name' | 'lastModified' | 'sizeBytes' | 'tag') => {
+    if (workspaceSortKey === key) {
+      setWorkspaceSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setWorkspaceSortKey(key)
+    setWorkspaceSortDirection(key === 'name' || key === 'tag' ? 'asc' : 'desc')
   }
 
   return (
@@ -177,6 +226,61 @@ export default function Home() {
               )}
 
               {activeView === 'Projects' && <div className="projects"><ResourceState loading={projectsResource.loading} error={projectsResource.error} isEmpty={(projectsResource.data ?? []).length === 0} loadingMessage="Loading projects…" errorMessage={(error) => `Failed to load projects: ${error}`} emptyMessage="No projects available." onRetry={projectsResource.reload} loadingClassName="panel project-card" errorClassName="panel project-card" emptyClassName="panel project-card muted">{(projectsResource.data ?? []).map((p) => <div key={p.id} className="panel project-card"><div className="row"><strong>{p.name}</strong><span className="badge">{p.status}</span></div><p className="muted">{p.taskCount} tasks · {p.lastActivity}</p><div className="progress"><div style={{ width: `${p.progress}%` }} /></div></div>)}</ResourceState></div>}
+
+              {activeView === 'Workspace Projects' && (
+                <div className="cron-jobs-view">
+                  <ResourceState loading={workspaceProjectsResource.loading} error={workspaceProjectsResource.error} isEmpty={workspaceProjects.length === 0} loadingMessage="Scanning workspace projects…" errorMessage={(error) => `Failed to load workspace projects: ${error}`} emptyMessage="No workspace projects found." onRetry={workspaceProjectsResource.reload} loadingClassName="panel muted" errorClassName="panel" emptyClassName="panel muted">
+                    <>
+                      <div className="ops-metrics">
+                        <div className="panel metric-card"><div className="muted">Total</div><strong>{workspaceMetrics.total}</strong></div>
+                        <div className="panel metric-card"><div className="muted">Active</div><strong>{workspaceMetrics.active}</strong></div>
+                        <div className="panel metric-card"><div className="muted">Legacy Candidate</div><strong>{workspaceMetrics.legacyCandidate}</strong></div>
+                        <div className="panel metric-card"><div className="muted">Experimental</div><strong>{workspaceMetrics.experimental}</strong></div>
+                      </div>
+
+                      <div className="panel cron-jobs-table-wrap">
+                        <div className="row" style={{ marginBottom: 10 }}>
+                          <strong>Workspace Project Inventory</strong>
+                          <div className="row" style={{ gap: 8 }}>
+                            <button className={`nav-btn ${workspaceTagFilter === 'all' ? 'active' : ''}`} onClick={() => setWorkspaceTagFilter('all')}>All Tags</button>
+                            <button className={`nav-btn ${workspaceTagFilter === 'active' ? 'active' : ''}`} onClick={() => setWorkspaceTagFilter('active')}>Active</button>
+                            <button className={`nav-btn ${workspaceTagFilter === 'legacy-candidate' ? 'active' : ''}`} onClick={() => setWorkspaceTagFilter('legacy-candidate')}>Legacy</button>
+                            <button className={`nav-btn ${workspaceTagFilter === 'experimental' ? 'active' : ''}`} onClick={() => setWorkspaceTagFilter('experimental')}>Experimental</button>
+                            <button className={`nav-btn ${workspaceRepoFilter === 'all' ? 'active' : ''}`} onClick={() => setWorkspaceRepoFilter('all')}>All</button>
+                            <button className={`nav-btn ${workspaceRepoFilter === 'repo' ? 'active' : ''}`} onClick={() => setWorkspaceRepoFilter('repo')}>Git Repos</button>
+                            <button className={`nav-btn ${workspaceRepoFilter === 'non-repo' ? 'active' : ''}`} onClick={() => setWorkspaceRepoFilter('non-repo')}>Non-Repo</button>
+                          </div>
+                        </div>
+
+                        <table className="ops-table">
+                          <thead>
+                            <tr>
+                              <th><button className="nav-btn" onClick={() => toggleWorkspaceSort('name')}>Name <ArrowDownUp size={12} /></button></th>
+                              <th>Tag</th>
+                              <th><button className="nav-btn" onClick={() => toggleWorkspaceSort('lastModified')}>Last Modified <ArrowDownUp size={12} /></button></th>
+                              <th><button className="nav-btn" onClick={() => toggleWorkspaceSort('sizeBytes')}>Size <ArrowDownUp size={12} /></button></th>
+                              <th>Git</th>
+                              <th>Path</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleWorkspaceProjects.map((project) => (
+                              <tr key={project.id}>
+                                <td><strong>{project.name}</strong></td>
+                                <td><span className="badge">{project.tag}</span></td>
+                                <td>{new Date(project.lastModified).toLocaleString('en-US')}</td>
+                                <td>{formatBytes(project.sizeBytes)}</td>
+                                <td>{project.isGitRepo ? `${project.gitBranch ?? 'detached'} · ${project.gitStatusSummary}` : 'not repo'}</td>
+                                <td><code>{project.path}</code></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  </ResourceState>
+                </div>
+              )}
 
               {activeView === 'Memory' && <div className="memory"><div className="panel sidebar-list"><ResourceState loading={memoriesResource.loading} error={memoriesResource.error} isEmpty={dates.length === 0} loadingMessage="Loading memories…" errorMessage={(error) => `Failed to load memories: ${error}`} emptyMessage="No memory dates found." onRetry={memoriesResource.reload} loadingClassName="muted" errorClassName="" emptyClassName="muted">{dates.map((d) => <button key={d} className="nav-btn" style={{ width: '100%', justifyContent: 'flex-start', paddingInline: 8, marginBottom: 6 }} onClick={() => setDate(d)}>{d}</button>)}</ResourceState></div><div className="panel memory-main"><div className="row" style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8 }}><button className="nav-btn" onClick={() => setMemoryTab('Recent')}>Recent</button><button className="nav-btn" onClick={() => setMemoryTab('Long-term')}>Long-term</button></div><span className="badge">{memoryTab}</span></div><ResourceState loading={memoriesResource.loading} error={memoriesResource.error} isEmpty={visibleMemories.length === 0} loadingMessage="Loading memories…" errorMessage={(error) => `Failed to load memories: ${error}`} emptyMessage="No memory entries in this view." onRetry={memoriesResource.reload} loadingClassName="muted" errorClassName="" emptyClassName="muted">{visibleMemories.map((m) => <div key={m.id} className="panel" style={{ padding: 12, marginBottom: 8 }}><div className="muted">{m.timestamp}</div><div>{m.content}</div></div>)}</ResourceState></div></div>}
 

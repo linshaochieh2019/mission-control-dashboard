@@ -1,4 +1,4 @@
-import { Activity, CronJob, Document, MemoryEntry, OpsSnapshot, Project, Task, TeamMember } from './types'
+import { Activity, CronJob, Document, MemoryEntry, OpsSnapshot, Project, Task, TeamMember, WorkspaceProject } from './types'
 
 export const mockTasks: Task[] = [
   { id: '1', title: 'Implement Auth Flow', description: 'Setup JWT and OAuth for user authentication.', assignee: 'H', status: 'In Progress' },
@@ -83,6 +83,31 @@ export const mockCronJobs: CronJob[] = [
     nextRunTime: '2026-03-03T07:00:00.000Z',
     lastRunStatus: 'unknown',
     category: 'project-temp',
+  },
+]
+
+export const mockWorkspaceProjects: WorkspaceProject[] = [
+  {
+    id: 'wsp-mission-control-dashboard',
+    name: 'mission-control-dashboard',
+    path: '/Users/pinchylin/.openclaw/workspace/mission-control-dashboard',
+    lastModified: '2026-03-04T01:22:00.000Z',
+    sizeBytes: 52_000_000,
+    isGitRepo: true,
+    gitBranch: 'main',
+    gitStatusSummary: 'clean',
+    tag: 'active',
+  },
+  {
+    id: 'wsp-poker-companion-app',
+    name: 'poker-companion-app',
+    path: '/Users/pinchylin/.openclaw/workspace/poker-companion-app',
+    lastModified: '2026-02-20T13:10:00.000Z',
+    sizeBytes: 18_000_000,
+    isGitRepo: true,
+    gitBranch: 'feature/ui-refresh',
+    gitStatusSummary: '3 modified',
+    tag: 'experimental',
   },
 ]
 

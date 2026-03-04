@@ -1,4 +1,4 @@
-import { mockActivities, mockCronJobs, mockDocs, mockMemories, mockOpsSnapshot, mockProjects, mockTasks, mockTeam } from '@/src/mockData'
+import { mockActivities, mockCronJobs, mockDocs, mockMemories, mockOpsSnapshot, mockProjects, mockTasks, mockTeam, mockWorkspaceProjects } from '@/src/mockData'
 import { ApiDashboardAdapter } from '@/src/services/apiDashboardAdapter'
 import { LocalDashboardAdapter } from '@/src/services/localDashboardAdapter'
 import {
@@ -15,8 +15,9 @@ import {
   toProject,
   toTask,
   toTeamMember,
+  toWorkspaceProject,
 } from '@/src/services/dashboardContracts'
-import { Activity, CronJob, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember } from '@/src/types'
+import { Activity, CronJob, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember, WorkspaceProject } from '@/src/types'
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
@@ -27,6 +28,7 @@ export interface DashboardDataService {
   getDocs(): Promise<Document[]>
   getTeam(): Promise<TeamMember[]>
   getCronJobs(): Promise<CronJob[]>
+  getWorkspaceProjects(): Promise<WorkspaceProject[]>
   getOpsSnapshot(): Promise<OpsSnapshot>
   getSource(): Promise<DashboardDataSource>
 }
@@ -127,6 +129,10 @@ export class MockDashboardDataService implements DashboardDataService {
     return resolveWithLatency(mockCronJobs)
   }
 
+  getWorkspaceProjects() {
+    return resolveWithLatency(mockWorkspaceProjects)
+  }
+
   getOpsSnapshot() {
     return resolveWithLatency(mockOpsSnapshot)
   }
@@ -169,6 +175,10 @@ export class ApiDashboardDataService implements DashboardDataService {
 
   async getCronJobs() {
     return (await this.adapter.getCronJobs()).map(toCronJob)
+  }
+
+  async getWorkspaceProjects() {
+    return (await this.adapter.getWorkspaceProjects?.() ?? []).map(toWorkspaceProject)
   }
 
   async getOpsSnapshot() {
