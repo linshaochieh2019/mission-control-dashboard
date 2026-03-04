@@ -11,6 +11,7 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceProject,
 } from '@/src/services/dashboardContracts'
 import { OpsAgentRow, OpsRunState } from '@/src/types'
 
@@ -43,6 +44,7 @@ export interface LocalDashboardPayload {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   cronJobs: ApiCronJob[]
+  workspaceProjects: ApiWorkspaceProject[]
   operations: ApiOpsSnapshot
   sessions: LocalSessionOverview[]
   subagents: LocalSubagentStatus[]
@@ -134,6 +136,7 @@ const withFallback = (warnings: string[]): LocalDashboardPayload => {
     docs: [],
     team: [],
     cronJobs: structuredClone(mockCronJobs),
+    workspaceProjects: [],
     operations: buildOpsSnapshot(tasks, activities, sessions, []),
     sessions,
     subagents: [],
@@ -263,6 +266,99 @@ const readSessionData = async (openclawHome: string) => {
 
 const summarizeText = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 140)
 
+const NOISE_DIRS = new Set([
+  '.git',
+  'node_modules',
+  '.next',
+  '.turbo',
+  '.cache',
+  '.idea',
+  '.vscode',
+  'dist',
+  'build',
+  'coverage',
+])
+
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / 1024 ** exp
+  return `${value.toFixed(value >= 10 || exp === 0 ? 0 : 1)} ${units[exp]}`
+}
+
+const estimateDirSize = async (dirPath: string, maxEntries = 400) => {
+  let total = 0
+  const stack = [dirPath]
+  let seen = 0
+
+  while (stack.length > 0 && seen < maxEntries) {
+    const current = stack.pop()
+    if (!current) continue
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+
+    for (const entry of entries) {
+      if (seen >= maxEntries) break
+      seen += 1
+      const fullPath = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        if (NOISE_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
+        stack.push(fullPath)
+      } else if (entry.isFile()) {
+        const stat = await fs.stat(fullPath).catch(() => null)
+        total += stat?.size ?? 0
+      }
+    }
+  }
+
+  return formatBytes(total)
+}
+
+const projectTag = (name: string, modifiedAtMs: number, isGitRepo: boolean): ApiWorkspaceProject['tag'] => {
+  const ageDays = (Date.now() - modifiedAtMs) / (1000 * 60 * 60 * 24)
+  const lowered = name.toLowerCase()
+  if (/exp|prototype|poc|sandbox|lab|playground|test/.test(lowered)) return 'experimental'
+  if (ageDays > 120 && !isGitRepo) return 'legacy-candidate'
+  if (ageDays > 240) return 'legacy-candidate'
+  return 'active'
+}
+
+const readWorkspaceProjects = async (workspaceRoot: string): Promise<ApiWorkspaceProject[]> => {
+  const entries = await fs.readdir(workspaceRoot, { withFileTypes: true }).catch(() => [])
+  const dirs = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => !name.startsWith('.') && !NOISE_DIRS.has(name) && !name.includes('tmp') && !name.includes('cache'))
+
+  const projects = await Promise.all(
+    dirs.map(async (name) => {
+      const projectDir = path.join(workspaceRoot, name)
+      const stat = await fs.stat(projectDir).catch(() => null)
+      if (!stat?.isDirectory()) return null
+
+      const gitDir = path.join(projectDir, '.git')
+      const isGitRepo = Boolean(await fs.stat(gitDir).catch(() => null))
+      let gitBranch: string | null = null
+      if (isGitRepo) {
+        const headRaw = await fs.readFile(path.join(gitDir, 'HEAD'), 'utf8').catch(() => '')
+        const refMatch = headRaw.match(/ref: refs\/heads\/(.+)/)
+        gitBranch = refMatch?.[1]?.trim() ?? null
+      }
+
+      return {
+        name,
+        lastModified: stat.mtime.toISOString(),
+        sizeEstimate: await estimateDirSize(projectDir),
+        isGitRepo,
+        gitBranch,
+        tag: projectTag(name, stat.mtimeMs, isGitRepo),
+      } satisfies ApiWorkspaceProject
+    }),
+  )
+
+  return projects.filter((item): item is ApiWorkspaceProject => Boolean(item))
+}
+
 const readWorkspaceData = async (workspaceRoot: string) => {
   const memoryDir = path.join(workspaceRoot, 'memory')
   const docsDir = path.join(workspaceRoot, 'docs')
@@ -390,10 +486,11 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
   const warnings: string[] = []
 
   try {
-    const [{ sessions, subagents, activities }, { memories, docs, projects }, cronJobs] = await Promise.all([
+    const [{ sessions, subagents, activities }, { memories, docs, projects }, cronJobs, workspaceProjects] = await Promise.all([
       readSessionData(openclawHome),
       readWorkspaceData(workspaceRoot),
       readCronJobs(openclawHome),
+      readWorkspaceProjects(workspaceRoot),
     ])
 
     const team: ApiTeamMember[] = subagents.slice(0, 6).map((item, index) => ({
@@ -418,6 +515,7 @@ export const buildLocalDashboardPayload = async (): Promise<LocalDashboardPayloa
       docs,
       team,
       cronJobs: cronJobs.length > 0 ? cronJobs : structuredClone(mockCronJobs),
+      workspaceProjects,
       operations: buildOpsSnapshot(effectiveTasks, activities, sessions, subagents),
       sessions,
       subagents,

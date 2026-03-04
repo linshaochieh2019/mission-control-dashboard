@@ -18,6 +18,8 @@ import {
   TaskStatus,
   TeamMember,
   TeamMemberStatus,
+  WorkspaceProject,
+  WorkspaceProjectTag,
 } from '@/src/types'
 
 export interface ApiTask {
@@ -71,6 +73,17 @@ export interface ApiTeamMember {
   parentId?: string
 }
 
+
+
+export interface ApiWorkspaceProject {
+  name: string
+  lastModified: string
+  sizeEstimate: string
+  isGitRepo: boolean
+  gitBranch: string | null
+  tag: WorkspaceProjectTag
+}
+
 export interface ApiCronJob {
   id: string
   name: string
@@ -97,6 +110,7 @@ export interface DashboardApiContract {
   docs: ApiDocument[]
   team: ApiTeamMember[]
   cronJobs: ApiCronJob[]
+  workspaceProjects?: ApiWorkspaceProject[]
   operations?: ApiOpsSnapshot
 }
 
@@ -115,6 +129,7 @@ export interface DashboardApiAdapter {
   getDocs(): Promise<ApiDocument[]>
   getTeam(): Promise<ApiTeamMember[]>
   getCronJobs(): Promise<ApiCronJob[]>
+  getWorkspaceProjects?(): Promise<ApiWorkspaceProject[]>
   getOpsSnapshot?(): Promise<ApiOpsSnapshot>
   getSource?(): Promise<DashboardDataSource>
 }
@@ -126,4 +141,5 @@ export const toMemoryEntry = (memory: ApiMemoryEntry): MemoryEntry => ({ ...memo
 export const toDocument = (doc: ApiDocument): Document => ({ ...doc })
 export const toTeamMember = (member: ApiTeamMember): TeamMember => ({ ...member })
 export const toCronJob = (job: ApiCronJob): CronJob => ({ ...job })
+export const toWorkspaceProject = (project: ApiWorkspaceProject): WorkspaceProject => ({ ...project })
 export const toOpsSnapshot = (snapshot: ApiOpsSnapshot): OpsSnapshot => ({ ...snapshot })

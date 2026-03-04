@@ -1,4 +1,16 @@
-export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Workspace Projects' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+
+
+export type WorkspaceProjectTag = 'active' | 'legacy-candidate' | 'experimental'
+
+export interface WorkspaceProject {
+  name: string
+  lastModified: string
+  sizeEstimate: string
+  isGitRepo: boolean
+  gitBranch: string | null
+  tag: WorkspaceProjectTag
+}
 
 export type TaskStatus = 'Backlog' | 'In Progress' | 'Review' | 'Done'
 

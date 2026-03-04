@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertCircle, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
+import { AlertCircle, ArrowDownUp, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
-import { AppView, CronJob } from '@/src/types'
+import { AppView, CronJob, WorkspaceProject } from '@/src/types'
 import { DashboardDataSource } from '@/src/services/dashboardContracts'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
 
 const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Live Agent Operations', icon: LayoutDashboard },
   { id: 'Cron Jobs', icon: Clock3 },
+  { id: 'Workspace Projects', icon: FolderKanban },
   { id: 'Projects', icon: FolderKanban },
   { id: 'Memory', icon: Brain },
   { id: 'Docs', icon: FileText },
@@ -46,6 +47,10 @@ export default function Home() {
   const [docId, setDocId] = useState<string>()
   const [dataSource, setDataSource] = useState<DashboardDataSource>('mock')
   const [cronFilter, setCronFilter] = useState<'all' | 'system' | 'project-temp'>('all')
+  const [workspaceTagFilter, setWorkspaceTagFilter] = useState<'all' | WorkspaceProject['tag']>('all')
+  const [workspaceRepoFilter, setWorkspaceRepoFilter] = useState<'all' | 'git' | 'non-git'>('all')
+  const [workspaceSort, setWorkspaceSort] = useState<'name' | 'lastModified' | 'sizeEstimate' | 'tag'>('lastModified')
+  const [workspaceSortDir, setWorkspaceSortDir] = useState<'asc' | 'desc'>('desc')
 
   const opsResource = useAsyncResource(useCallback(() => dashboardDataService.getOpsSnapshot(), []))
   const projectsResource = useAsyncResource(useCallback(() => dashboardDataService.getProjects(), []))
@@ -53,6 +58,7 @@ export default function Home() {
   const docsResource = useAsyncResource(useCallback(() => dashboardDataService.getDocs(), []))
   const teamResource = useAsyncResource(useCallback(() => dashboardDataService.getTeam(), []))
   const cronJobsResource = useAsyncResource(useCallback(() => dashboardDataService.getCronJobs(), []))
+  const workspaceProjectsResource = useAsyncResource(useCallback(() => dashboardDataService.getWorkspaceProjects(), []))
 
   useEffect(() => {
     if (!date && memoriesResource.data?.[0]) setDate(memoriesResource.data[0].date)
@@ -72,6 +78,40 @@ export default function Home() {
 
   const cronJobs = cronJobsResource.data ?? []
   const filteredCronJobs = cronJobs.filter((job) => (cronFilter === 'all' ? true : job.category === cronFilter))
+
+
+  const parseSizeBytes = (value: string) => {
+    const match = value.trim().match(/([\d.]+)\s*(B|KB|MB|GB|TB)/i)
+    if (!match) return 0
+    const amount = Number(match[1])
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    const unitIndex = units.indexOf(match[2].toUpperCase())
+    if (Number.isNaN(amount) || unitIndex < 0) return 0
+    return amount * 1024 ** unitIndex
+  }
+
+  const workspaceProjects = workspaceProjectsResource.data ?? []
+  const filteredWorkspaceProjects = workspaceProjects
+    .filter((project) => (workspaceTagFilter === 'all' ? true : project.tag === workspaceTagFilter))
+    .filter((project) => (workspaceRepoFilter === 'all' ? true : workspaceRepoFilter === 'git' ? project.isGitRepo : !project.isGitRepo))
+
+  const sortedWorkspaceProjects = [...filteredWorkspaceProjects].sort((a, b) => {
+    const direction = workspaceSortDir === 'asc' ? 1 : -1
+    if (workspaceSort === 'name') return a.name.localeCompare(b.name) * direction
+    if (workspaceSort === 'sizeEstimate') return (parseSizeBytes(a.sizeEstimate) - parseSizeBytes(b.sizeEstimate)) * direction
+    if (workspaceSort === 'tag') return a.tag.localeCompare(b.tag) * direction
+    return (Date.parse(a.lastModified) - Date.parse(b.lastModified)) * direction
+  })
+
+  const toggleWorkspaceSort = (key: 'name' | 'lastModified' | 'sizeEstimate' | 'tag') => {
+    if (workspaceSort === key) {
+      setWorkspaceSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setWorkspaceSort(key)
+    setWorkspaceSortDir(key === 'name' || key === 'tag' ? 'asc' : 'desc')
+  }
+
   const cronMetrics = {
     total: cronJobs.length,
     enabled: cronJobs.filter((job) => job.enabled).length,
@@ -214,6 +254,72 @@ export default function Home() {
                                 <td>{job.nextRunTime ? new Date(job.nextRunTime).toLocaleString('en-US') : 'N/A'}</td>
                                 <td>{job.lastRunStatus}</td>
                                 <td><code>{job.id.slice(0, 8)}</code></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  </ResourceState>
+                </div>
+              )}
+
+
+
+              {activeView === 'Workspace Projects' && (
+                <div className="workspace-projects-view">
+                  <ResourceState
+                    loading={workspaceProjectsResource.loading}
+                    error={workspaceProjectsResource.error}
+                    isEmpty={workspaceProjects.length === 0}
+                    loadingMessage="Scanning workspace projects…"
+                    errorMessage={(error) => `Failed to load workspace projects: ${error}`}
+                    emptyMessage="No workspace projects found."
+                    onRetry={workspaceProjectsResource.reload}
+                    loadingClassName="panel muted"
+                    errorClassName="panel"
+                    emptyClassName="panel muted"
+                  >
+                    <>
+                      <div className="panel workspace-controls">
+                        <div className="row" style={{ gap: 8 }}>
+                          <strong>Workspace Projects</strong>
+                          <span className="badge">{sortedWorkspaceProjects.length} visible / {workspaceProjects.length} total</span>
+                        </div>
+                        <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+                          <select className="control-select" value={workspaceTagFilter} onChange={(event) => setWorkspaceTagFilter(event.target.value as 'all' | WorkspaceProject['tag'])}>
+                            <option value="all">All tags</option>
+                            <option value="active">active</option>
+                            <option value="legacy-candidate">legacy-candidate</option>
+                            <option value="experimental">experimental</option>
+                          </select>
+                          <select className="control-select" value={workspaceRepoFilter} onChange={(event) => setWorkspaceRepoFilter(event.target.value as 'all' | 'git' | 'non-git')}>
+                            <option value="all">All repos</option>
+                            <option value="git">Git repos</option>
+                            <option value="non-git">Non-git</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="panel workspace-table-wrap">
+                        <table className="ops-table workspace-table">
+                          <thead>
+                            <tr>
+                              <th><button className="sort-btn" onClick={() => toggleWorkspaceSort('name')}>Name <ArrowDownUp size={12} /></button></th>
+                              <th><button className="sort-btn" onClick={() => toggleWorkspaceSort('lastModified')}>Last Modified <ArrowDownUp size={12} /></button></th>
+                              <th><button className="sort-btn" onClick={() => toggleWorkspaceSort('sizeEstimate')}>Size Estimate <ArrowDownUp size={12} /></button></th>
+                              <th>Git Summary</th>
+                              <th><button className="sort-btn" onClick={() => toggleWorkspaceSort('tag')}>Tag <ArrowDownUp size={12} /></button></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedWorkspaceProjects.map((project) => (
+                              <tr key={project.name}>
+                                <td><strong>{project.name}</strong></td>
+                                <td>{new Date(project.lastModified).toLocaleString('en-US')}</td>
+                                <td>{project.sizeEstimate}</td>
+                                <td>{project.isGitRepo ? `repo${project.gitBranch ? ` · ${project.gitBranch}` : ''}` : 'not a repo'}</td>
+                                <td><span className="badge">{project.tag}</span></td>
                               </tr>
                             ))}
                           </tbody>
