@@ -53,6 +53,21 @@ const formatBytes = (bytes: number) => {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[idx]}`
 }
 
+
+const filterWorkspaceTree = (nodes: WorkspaceExplorerNode[], keyword: string): WorkspaceExplorerNode[] => {
+  if (!keyword.trim()) return nodes
+  const needle = keyword.toLowerCase()
+
+  return nodes.reduce<WorkspaceExplorerNode[]>((acc, node) => {
+    const matches = node.name.toLowerCase().includes(needle) || node.path.toLowerCase().includes(needle)
+    const children = node.children ? filterWorkspaceTree(node.children, keyword) : undefined
+    if (matches || (children && children.length > 0)) {
+      acc.push({ ...node, children })
+    }
+    return acc
+  }, [])
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Live Agent Operations')
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
