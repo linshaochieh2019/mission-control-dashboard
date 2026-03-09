@@ -1,4 +1,4 @@
-export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Workspace Projects' | 'Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Workspace Projects' | 'Projects' | 'Workspace Explorer' | 'Memory' | 'Docs' | 'Team'
 
 
 export type WorkspaceProjectTag = 'active' | 'legacy-candidate' | 'experimental'
@@ -126,4 +126,28 @@ export interface OpsSnapshot {
   agents: OpsAgentRow[]
   timeline: OpsTimelineEvent[]
   lanes: OpsPipelineLane[]
+}
+
+
+export type WorkspaceEntryType = 'dir' | 'file'
+
+export interface WorkspaceExplorerNode {
+  path: string
+  name: string
+  type: WorkspaceEntryType
+  extension: string | null
+  size: number
+  modifiedTime: string
+  children?: WorkspaceExplorerNode[]
+}
+
+export interface WorkspaceFilePreview {
+  path: string
+  name: string
+  type: WorkspaceEntryType
+  extension: string | null
+  size: number
+  modifiedTime: string
+  content: string | null
+  previewSupported: boolean
 }

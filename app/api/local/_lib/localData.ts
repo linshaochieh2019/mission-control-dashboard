@@ -359,6 +359,135 @@ const readWorkspaceProjects = async (workspaceRoot: string): Promise<ApiWorkspac
   return projects.filter((item): item is ApiWorkspaceProject => Boolean(item))
 }
 
+export interface LocalWorkspaceExplorerNode {
+  path: string
+  name: string
+  type: 'dir' | 'file'
+  extension: string | null
+  size: number
+  modifiedTime: string
+  children?: LocalWorkspaceExplorerNode[]
+}
+
+const EXPLORER_EXCLUDED_DIRS = new Set([
+  ...NOISE_DIRS,
+  'coverage',
+  'tmp',
+  'temp',
+  'target',
+  'bin',
+  'obj',
+])
+
+const shouldSkipEntry = (name: string, isDirectory: boolean) => {
+  if (EXPLORER_EXCLUDED_DIRS.has(name)) return true
+  if (name.startsWith('.')) {
+    if (name === '.github') return false
+    return true
+  }
+
+  if (isDirectory && /^(tmp|temp|cache)/i.test(name)) return true
+  return false
+}
+
+const toRelativePath = (absolutePath: string, workspaceRoot: string) => path.relative(workspaceRoot, absolutePath).replaceAll(path.sep, '/')
+
+const buildWorkspaceExplorerTree = async (absoluteDir: string, workspaceRoot: string, depth = 0): Promise<LocalWorkspaceExplorerNode[]> => {
+  if (depth > 8) return []
+
+  const entries = await fs.readdir(absoluteDir, { withFileTypes: true }).catch(() => [])
+  const nodes = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = path.join(absoluteDir, entry.name)
+      if (shouldSkipEntry(entry.name, entry.isDirectory())) return null
+
+      const stat = await fs.stat(fullPath).catch(() => null)
+      if (!stat) return null
+
+      const relativePath = toRelativePath(fullPath, workspaceRoot)
+
+      if (entry.isDirectory()) {
+        const children = await buildWorkspaceExplorerTree(fullPath, workspaceRoot, depth + 1)
+        return {
+          path: relativePath,
+          name: entry.name,
+          type: 'dir' as const,
+          extension: null,
+          size: 0,
+          modifiedTime: stat.mtime.toISOString(),
+          children,
+        }
+      }
+
+      if (!entry.isFile()) return null
+      const extension = path.extname(entry.name).slice(1).toLowerCase() || null
+      return {
+        path: relativePath,
+        name: entry.name,
+        type: 'file' as const,
+        extension,
+        size: stat.size,
+        modifiedTime: stat.mtime.toISOString(),
+      }
+    }),
+  )
+
+  return nodes
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a!.type !== b!.type) return a!.type === 'dir' ? -1 : 1
+      return a!.name.localeCompare(b!.name)
+    }) as LocalWorkspaceExplorerNode[]
+}
+
+const resolveWorkspaceAbsolutePath = (workspaceRoot: string, relativePath: string) => {
+  const safeRelativePath = relativePath.replace(/^\/+/, '')
+  const absolutePath = path.resolve(workspaceRoot, safeRelativePath)
+  const normalizedRoot = path.resolve(workspaceRoot)
+
+  if (!absolutePath.startsWith(normalizedRoot)) {
+    throw new Error('Invalid workspace path')
+  }
+
+  return absolutePath
+}
+
+export const readWorkspaceExplorerTree = async (workspaceRoot = resolveWorkspaceRoot()) => buildWorkspaceExplorerTree(workspaceRoot, workspaceRoot)
+
+export const readWorkspaceFilePreview = async (relativePath: string, workspaceRoot = resolveWorkspaceRoot()) => {
+  const absolutePath = resolveWorkspaceAbsolutePath(workspaceRoot, relativePath)
+  const stat = await fs.stat(absolutePath)
+  const extension = path.extname(absolutePath).slice(1).toLowerCase() || null
+  const name = path.basename(absolutePath)
+
+  if (!stat.isFile()) {
+    return {
+      path: toRelativePath(absolutePath, workspaceRoot),
+      name,
+      type: 'dir' as const,
+      extension: null,
+      size: 0,
+      modifiedTime: stat.mtime.toISOString(),
+      content: null,
+      previewSupported: false,
+    }
+  }
+
+  const isMarkdown = extension === 'md' || extension === 'markdown'
+  const content = isMarkdown ? await fs.readFile(absolutePath, 'utf8') : null
+
+  return {
+    path: toRelativePath(absolutePath, workspaceRoot),
+    name,
+    type: 'file' as const,
+    extension,
+    size: stat.size,
+    modifiedTime: stat.mtime.toISOString(),
+    content,
+    previewSupported: isMarkdown,
+  }
+}
+
 const readWorkspaceData = async (workspaceRoot: string) => {
   const memoryDir = path.join(workspaceRoot, 'memory')
   const docsDir = path.join(workspaceRoot, 'docs')

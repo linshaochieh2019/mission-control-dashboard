@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertCircle, ArrowDownUp, Brain, Clock3, FileText, FolderKanban, LayoutDashboard, Users } from 'lucide-react'
+import { AlertCircle, ArrowDownUp, Brain, Clock3, FileText, FolderKanban, FolderTree, LayoutDashboard, Search, Users } from 'lucide-react'
 import { useAsyncResource } from '@/src/hooks/useAsyncResource'
 import { dashboardDataService } from '@/src/services/dashboardDataService'
-import { AppView, CronJob, WorkspaceProject } from '@/src/types'
+import { AppView, CronJob, WorkspaceExplorerNode, WorkspaceFilePreview, WorkspaceProject } from '@/src/types'
 import { DashboardDataSource } from '@/src/services/dashboardContracts'
 import { EmptyState, ResourceState } from '@/src/components/resourceStates'
 
@@ -15,6 +15,7 @@ const views: { id: AppView; icon: React.ElementType }[] = [
   { id: 'Cron Jobs', icon: Clock3 },
   { id: 'Workspace Projects', icon: FolderKanban },
   { id: 'Projects', icon: FolderKanban },
+  { id: 'Workspace Explorer', icon: FolderTree },
   { id: 'Memory', icon: Brain },
   { id: 'Docs', icon: FileText },
   { id: 'Team', icon: Users },
@@ -40,6 +41,18 @@ const agentAvatarByName: Record<string, string> = {
   Bloop: '/avatars/bloop.png',
 }
 
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let idx = 0
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024
+    idx += 1
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[idx]}`
+}
+
 export default function Home() {
   const [activeView, setActiveView] = useState<AppView>('Live Agent Operations')
   const [memoryTab, setMemoryTab] = useState<'Recent' | 'Long-term'>('Recent')
@@ -51,6 +64,12 @@ export default function Home() {
   const [workspaceRepoFilter, setWorkspaceRepoFilter] = useState<'all' | 'git' | 'non-git'>('all')
   const [workspaceSort, setWorkspaceSort] = useState<'name' | 'lastModified' | 'sizeEstimate' | 'tag'>('lastModified')
   const [workspaceSortDir, setWorkspaceSortDir] = useState<'asc' | 'desc'>('desc')
+  const [workspaceSearch, setWorkspaceSearch] = useState('')
+  const [expandedWorkspaceNodes, setExpandedWorkspaceNodes] = useState<Record<string, boolean>>({})
+  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string>()
+  const [workspaceFilePreview, setWorkspaceFilePreview] = useState<WorkspaceFilePreview | null>(null)
+  const [workspacePreviewLoading, setWorkspacePreviewLoading] = useState(false)
+  const [workspacePreviewError, setWorkspacePreviewError] = useState<string | null>(null)
 
   const opsResource = useAsyncResource(useCallback(() => dashboardDataService.getOpsSnapshot(), []))
   const projectsResource = useAsyncResource(useCallback(() => dashboardDataService.getProjects(), []))
@@ -59,6 +78,7 @@ export default function Home() {
   const teamResource = useAsyncResource(useCallback(() => dashboardDataService.getTeam(), []))
   const cronJobsResource = useAsyncResource(useCallback(() => dashboardDataService.getCronJobs(), []))
   const workspaceProjectsResource = useAsyncResource(useCallback(() => dashboardDataService.getWorkspaceProjects(), []))
+  const workspaceExplorerTreeResource = useAsyncResource(useCallback(() => dashboardDataService.getWorkspaceExplorerTree(), []))
 
   useEffect(() => {
     if (!date && memoriesResource.data?.[0]) setDate(memoriesResource.data[0].date)
@@ -103,6 +123,31 @@ export default function Home() {
     return (Date.parse(a.lastModified) - Date.parse(b.lastModified)) * direction
   })
 
+
+  const filteredWorkspaceTree = useMemo(
+    () => filterWorkspaceTree(workspaceExplorerTreeResource.data ?? [], workspaceSearch),
+    [workspaceExplorerTreeResource.data, workspaceSearch],
+  )
+
+  const toggleWorkspaceNode = (path: string) => {
+    setExpandedWorkspaceNodes((prev) => ({ ...prev, [path]: !prev[path] }))
+  }
+
+  const loadWorkspaceFilePreview = async (targetPath: string) => {
+    setSelectedWorkspacePath(targetPath)
+    setWorkspacePreviewError(null)
+    setWorkspacePreviewLoading(true)
+    try {
+      const preview = await dashboardDataService.getWorkspaceFilePreview(targetPath)
+      setWorkspaceFilePreview(preview)
+    } catch (error) {
+      setWorkspaceFilePreview(null)
+      setWorkspacePreviewError(error instanceof Error ? error.message : 'Failed to load file preview')
+    } finally {
+      setWorkspacePreviewLoading(false)
+    }
+  }
+
   const toggleWorkspaceSort = (key: 'name' | 'lastModified' | 'sizeEstimate' | 'tag') => {
     if (workspaceSort === key) {
       setWorkspaceSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
@@ -118,6 +163,32 @@ export default function Home() {
     disabled: cronJobs.filter((job) => !job.enabled).length,
     dueSoon: cronJobs.filter(dueSoon).length,
   }
+
+  const renderWorkspaceTree = (nodes: WorkspaceExplorerNode[], depth = 0): React.ReactNode => (
+    nodes.map((node) => {
+      const isDir = node.type === 'dir'
+      const isExpanded = Boolean(expandedWorkspaceNodes[node.path])
+      return (
+        <div key={node.path}>
+          <button
+            className={`workspace-tree-item ${selectedWorkspacePath === node.path ? 'active' : ''}`}
+            style={{ paddingLeft: `${8 + depth * 16}px` }}
+            onClick={() => {
+              if (isDir) {
+                toggleWorkspaceNode(node.path)
+                return
+              }
+              loadWorkspaceFilePreview(node.path)
+            }}
+          >
+            <span>{isDir ? (isExpanded ? '▾' : '▸') : '•'}</span>
+            <span>{node.name}</span>
+          </button>
+          {isDir && isExpanded && node.children && renderWorkspaceTree(node.children, depth + 1)}
+        </div>
+      )
+    })
+  )
 
   return (
     <div className="app">
@@ -331,6 +402,44 @@ export default function Home() {
               )}
 
               {activeView === 'Projects' && <div className="projects"><ResourceState loading={projectsResource.loading} error={projectsResource.error} isEmpty={(projectsResource.data ?? []).length === 0} loadingMessage="Loading projects…" errorMessage={(error) => `Failed to load projects: ${error}`} emptyMessage="No projects available." onRetry={projectsResource.reload} loadingClassName="panel project-card" errorClassName="panel project-card" emptyClassName="panel project-card muted">{(projectsResource.data ?? []).map((p) => <div key={p.id} className="panel project-card"><div className="row"><strong>{p.name}</strong><span className="badge">{p.status}</span></div><p className="muted">{p.taskCount} tasks · {p.lastActivity}</p><div className="progress"><div style={{ width: `${p.progress}%` }} /></div></div>)}</ResourceState></div>}
+
+              {activeView === 'Workspace Explorer' && (
+                <div className="workspace-explorer">
+                  <div className="panel workspace-tree-pane">
+                    <div className="row" style={{ marginBottom: 8, gap: 8 }}>
+                      <strong>Workspace Explorer</strong>
+                      <button className="nav-btn" onClick={workspaceExplorerTreeResource.reload}>Refresh</button>
+                    </div>
+                    <div className="workspace-search-row">
+                      <Search size={14} />
+                      <input value={workspaceSearch} onChange={(e) => setWorkspaceSearch(e.target.value)} placeholder="Search file or path..." className="workspace-search" />
+                    </div>
+                    <ResourceState loading={workspaceExplorerTreeResource.loading} error={workspaceExplorerTreeResource.error} isEmpty={filteredWorkspaceTree.length === 0} loadingMessage="Scanning workspace tree…" errorMessage={(error) => `Failed to load workspace tree: ${error}`} emptyMessage="No files found." onRetry={workspaceExplorerTreeResource.reload} loadingClassName="muted" errorClassName="" emptyClassName="muted">
+                      {renderWorkspaceTree(filteredWorkspaceTree)}
+                    </ResourceState>
+                  </div>
+
+                  <div className="panel workspace-preview-pane">
+                    {!selectedWorkspacePath && <EmptyState message="Select a file from the left panel." className="muted" />}
+                    {workspacePreviewLoading && <p className="muted">Loading file preview…</p>}
+                    {workspacePreviewError && <p className="muted">{workspacePreviewError}</p>}
+                    {!workspacePreviewLoading && workspaceFilePreview && (
+                      <>
+                        <div className="row" style={{ marginBottom: 8 }}>
+                          <strong>{workspaceFilePreview.name}</strong>
+                          <span className="badge">{workspaceFilePreview.extension ?? 'n/a'}</span>
+                        </div>
+                        <p className="muted">{workspaceFilePreview.path} · {formatBytes(workspaceFilePreview.size)} · {new Date(workspaceFilePreview.modifiedTime).toLocaleString('en-US')}</p>
+                        {workspaceFilePreview.previewSupported ? (
+                          <pre className="workspace-markdown-preview">{workspaceFilePreview.content}</pre>
+                        ) : (
+                          <p className="muted">preview not supported</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {activeView === 'Memory' && <div className="memory"><div className="panel sidebar-list"><ResourceState loading={memoriesResource.loading} error={memoriesResource.error} isEmpty={dates.length === 0} loadingMessage="Loading memories…" errorMessage={(error) => `Failed to load memories: ${error}`} emptyMessage="No memory dates found." onRetry={memoriesResource.reload} loadingClassName="muted" errorClassName="" emptyClassName="muted">{dates.map((d) => <button key={d} className="nav-btn" style={{ width: '100%', justifyContent: 'flex-start', paddingInline: 8, marginBottom: 6 }} onClick={() => setDate(d)}>{d}</button>)}</ResourceState></div><div className="panel memory-main"><div className="row" style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8 }}><button className="nav-btn" onClick={() => setMemoryTab('Recent')}>Recent</button><button className="nav-btn" onClick={() => setMemoryTab('Long-term')}>Long-term</button></div><span className="badge">{memoryTab}</span></div><ResourceState loading={memoriesResource.loading} error={memoriesResource.error} isEmpty={visibleMemories.length === 0} loadingMessage="Loading memories…" errorMessage={(error) => `Failed to load memories: ${error}`} emptyMessage="No memory entries in this view." onRetry={memoriesResource.reload} loadingClassName="muted" errorClassName="" emptyClassName="muted">{visibleMemories.map((m) => <div key={m.id} className="panel" style={{ padding: 12, marginBottom: 8 }}><div className="muted">{m.timestamp}</div><div>{m.content}</div></div>)}</ResourceState></div></div>}
 
