@@ -72,3 +72,12 @@ body {
 .agent { padding: 14px; }
 .muted { color: var(--muted); font-size: 12px; }
 .row { display: flex; justify-content: space-between; align-items: center; }
+
+.workspace-explorer { display: grid; grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr); gap: 12px; height: 100%; }
+.workspace-tree-pane, .workspace-preview-pane { padding: 12px; overflow: auto; min-height: 0; }
+.workspace-search-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; margin-bottom: 10px; }
+.workspace-search { flex: 1; background: transparent; border: none; color: var(--text); min-height: 32px; }
+.workspace-search:focus { outline: none; }
+.workspace-tree-item { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center; background: transparent; border: 0; color: var(--text); padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.workspace-tree-item:hover, .workspace-tree-item.active { background: #111826; }
+.workspace-markdown-preview { white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #0f0f0f; }

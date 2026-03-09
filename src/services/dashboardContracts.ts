@@ -18,6 +18,8 @@ import {
   TaskStatus,
   TeamMember,
   TeamMemberStatus,
+  WorkspaceExplorerNode,
+  WorkspaceFilePreview,
   WorkspaceProject,
   WorkspaceProjectTag,
 } from '@/src/types'
@@ -103,6 +105,27 @@ export interface ApiWorkspaceProject {
   tag: WorkspaceProjectTag
 }
 
+export interface ApiWorkspaceExplorerNode {
+  path: string
+  name: string
+  type: 'dir' | 'file'
+  extension: string | null
+  size: number
+  modifiedTime: string
+  children?: ApiWorkspaceExplorerNode[]
+}
+
+export interface ApiWorkspaceFilePreview {
+  path: string
+  name: string
+  type: 'dir' | 'file'
+  extension: string | null
+  size: number
+  modifiedTime: string
+  content: string | null
+  previewSupported: boolean
+}
+
 export interface DashboardApiContract {
   tasks: ApiTask[]
   activities: ApiActivity[]
@@ -131,6 +154,8 @@ export interface DashboardApiAdapter {
   getTeam(): Promise<ApiTeamMember[]>
   getCronJobs(): Promise<ApiCronJob[]>
   getWorkspaceProjects?(): Promise<ApiWorkspaceProject[]>
+  getWorkspaceExplorerTree?(): Promise<ApiWorkspaceExplorerNode[]>
+  getWorkspaceFilePreview?(relativePath: string): Promise<ApiWorkspaceFilePreview>
   getOpsSnapshot?(): Promise<ApiOpsSnapshot>
   getSource?(): Promise<DashboardDataSource>
 }
@@ -143,4 +168,9 @@ export const toDocument = (doc: ApiDocument): Document => ({ ...doc })
 export const toTeamMember = (member: ApiTeamMember): TeamMember => ({ ...member })
 export const toCronJob = (job: ApiCronJob): CronJob => ({ ...job })
 export const toWorkspaceProject = (project: ApiWorkspaceProject): WorkspaceProject => ({ ...project })
+export const toWorkspaceExplorerNode = (node: ApiWorkspaceExplorerNode): WorkspaceExplorerNode => ({
+  ...node,
+  children: node.children?.map(toWorkspaceExplorerNode),
+})
+export const toWorkspaceFilePreview = (file: ApiWorkspaceFilePreview): WorkspaceFilePreview => ({ ...file })
 export const toOpsSnapshot = (snapshot: ApiOpsSnapshot): OpsSnapshot => ({ ...snapshot })

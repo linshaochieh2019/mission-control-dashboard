@@ -15,9 +15,11 @@ import {
   toProject,
   toTask,
   toTeamMember,
+  toWorkspaceExplorerNode,
+  toWorkspaceFilePreview,
   toWorkspaceProject,
 } from '@/src/services/dashboardContracts'
-import { Activity, CronJob, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember, WorkspaceProject } from '@/src/types'
+import { Activity, CronJob, Document, MemoryEntry, OpsAgentRow, OpsRunState, OpsSnapshot, Project, Task, TaskStatus, TeamMember, WorkspaceExplorerNode, WorkspaceFilePreview, WorkspaceProject } from '@/src/types'
 
 export interface DashboardDataService {
   getTasks(): Promise<Task[]>
@@ -29,6 +31,8 @@ export interface DashboardDataService {
   getTeam(): Promise<TeamMember[]>
   getCronJobs(): Promise<CronJob[]>
   getWorkspaceProjects(): Promise<WorkspaceProject[]>
+  getWorkspaceExplorerTree(): Promise<WorkspaceExplorerNode[]>
+  getWorkspaceFilePreview(relativePath: string): Promise<WorkspaceFilePreview>
   getOpsSnapshot(): Promise<OpsSnapshot>
   getSource(): Promise<DashboardDataSource>
 }
@@ -133,6 +137,23 @@ export class MockDashboardDataService implements DashboardDataService {
     return resolveWithLatency(mockWorkspaceProjects)
   }
 
+  getWorkspaceExplorerTree() {
+    return resolveWithLatency([])
+  }
+
+  getWorkspaceFilePreview(relativePath: string) {
+    return resolveWithLatency({
+      path: relativePath,
+      name: relativePath.split('/').pop() ?? relativePath,
+      type: 'file' as const,
+      extension: relativePath.split('.').pop() ?? null,
+      size: 0,
+      modifiedTime: new Date().toISOString(),
+      content: null,
+      previewSupported: false,
+    })
+  }
+
   getOpsSnapshot() {
     return resolveWithLatency(mockOpsSnapshot)
   }
@@ -179,6 +200,18 @@ export class ApiDashboardDataService implements DashboardDataService {
 
   async getWorkspaceProjects() {
     return (await this.adapter.getWorkspaceProjects?.() ?? []).map(toWorkspaceProject)
+  }
+
+  async getWorkspaceExplorerTree() {
+    return (await this.adapter.getWorkspaceExplorerTree?.() ?? []).map(toWorkspaceExplorerNode)
+  }
+
+  async getWorkspaceFilePreview(relativePath: string) {
+    if (!this.adapter.getWorkspaceFilePreview) {
+      throw new Error('Workspace file preview is not available for this data source')
+    }
+
+    return toWorkspaceFilePreview(await this.adapter.getWorkspaceFilePreview(relativePath))
   }
 
   async getOpsSnapshot() {

@@ -7,6 +7,8 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceExplorerNode,
+  ApiWorkspaceFilePreview,
   ApiWorkspaceProject,
   DashboardApiAdapter,
   DashboardDataSource,
@@ -86,6 +88,18 @@ export class LocalDashboardAdapter implements DashboardApiAdapter {
 
   async getOpsSnapshot() {
     return (await this.getPayload()).operations
+  }
+
+  async getWorkspaceExplorerTree() {
+    const response = await fetch('/api/local/workspace-explorer/tree', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Workspace tree request failed (${response.status})`)
+    return (await response.json()) as ApiWorkspaceExplorerNode[]
+  }
+
+  async getWorkspaceFilePreview(relativePath: string) {
+    const response = await fetch(`/api/local/workspace-explorer/file?path=${encodeURIComponent(relativePath)}`, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Workspace file request failed (${response.status})`)
+    return (await response.json()) as ApiWorkspaceFilePreview
   }
 
   async getSource() {

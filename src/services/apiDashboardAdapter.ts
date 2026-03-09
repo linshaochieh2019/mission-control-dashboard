@@ -6,6 +6,8 @@ import {
   ApiProject,
   ApiTask,
   ApiTeamMember,
+  ApiWorkspaceExplorerNode,
+  ApiWorkspaceFilePreview,
   ApiWorkspaceProject,
   DashboardApiAdapter,
   DashboardDataSource,
@@ -70,6 +72,14 @@ export class ApiDashboardAdapter implements DashboardApiAdapter {
 
   getWorkspaceProjects() {
     return this.request<ApiWorkspaceProject[]>('/workspace-projects').catch(() => [])
+  }
+
+  getWorkspaceExplorerTree() {
+    return this.request<ApiWorkspaceExplorerNode[]>('/workspace-explorer/tree').catch(() => [])
+  }
+
+  getWorkspaceFilePreview(relativePath: string) {
+    return this.request<ApiWorkspaceFilePreview>(`/workspace-explorer/file?path=${encodeURIComponent(relativePath)}`)
   }
 
   async getSource(): Promise<DashboardDataSource> {

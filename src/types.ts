@@ -1,4 +1,4 @@
-export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Workspace Projects' | 'Memory' | 'Docs' | 'Team'
+export type AppView = 'Live Agent Operations' | 'Cron Jobs' | 'Projects' | 'Workspace Projects' | 'Workspace Explorer' | 'Memory' | 'Docs' | 'Team'
 
 export type TaskStatus = 'Backlog' | 'In Progress' | 'Review' | 'Done'
 
@@ -128,4 +128,27 @@ export interface WorkspaceProject {
   gitBranch: string | null
   gitStatusSummary: string
   tag: WorkspaceProjectTag
+}
+
+export type WorkspaceEntryType = 'dir' | 'file'
+
+export interface WorkspaceExplorerNode {
+  path: string
+  name: string
+  type: WorkspaceEntryType
+  extension: string | null
+  size: number
+  modifiedTime: string
+  children?: WorkspaceExplorerNode[]
+}
+
+export interface WorkspaceFilePreview {
+  path: string
+  name: string
+  type: WorkspaceEntryType
+  extension: string | null
+  size: number
+  modifiedTime: string
+  content: string | null
+  previewSupported: boolean
 }
